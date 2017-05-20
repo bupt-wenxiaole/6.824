@@ -116,4 +116,7 @@ cscope.out
 cscope.in.out
 cscope.po.out
 
-
+#self configuration
+.idea/6.824.iml
+.idea/modules.xml
+.tags_sorted_by_file
