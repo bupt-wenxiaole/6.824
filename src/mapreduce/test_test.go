@@ -24,7 +24,7 @@ const (
 
 // Split in words
 func MapFunc(file string, value string) (res []KeyValue) {
-	debug("Map %v\n", value)
+	//debug("Map %v\n", value)
 	words := strings.Fields(value)
 	for _, w := range words {
 		kv := KeyValue{w, ""}

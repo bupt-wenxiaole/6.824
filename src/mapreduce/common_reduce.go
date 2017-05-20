@@ -1,5 +1,9 @@
 package mapreduce
-
+import (
+	"os"
+	"encoding/json"
+	"bufio"
+)
 // doReduce manages one reduce task: it reads the intermediate
 // key/value pairs (produced by the map phase) for this task, sorts the
 // intermediate key/value pairs by key, calls the user-defined reduce function
@@ -11,6 +15,37 @@ func doReduce(
 	nMap int, // the number of map tasks that were run ("M" in the paper)
 	reduceF func(key string, values []string) string,
 ) {
+
+
+  	mergeFileName := mergeName(jobName, reduceTaskNumber)   //每个reduce任务的结果存储在各自的这个文件里。
+  	//最后这些文件可以进行merge也可以不进行merge
+  	mergeFileHandle, err := os.Create(mergeFileName)
+ 	checkError(err)
+ 	defer mergeFileHandle.Close()
+  	mergeFileEnc := json.NewEncoder(mergeFileHandle)
+  	reduceFuncInput := make(map[string] []string)
+    for i := 0; i < nMap; i ++ {
+    	tmpfileListToReduce := reduceName(jobName, i, reduceTaskNumber)
+    	tmpfileListToReduceHandle, err := os.Open(tmpfileListToReduce)
+    	checkError(err)
+    	defer tmpfileListToReduceHandle.Close()
+    	tmpfileScanner := bufio.NewScanner(tmpfileListToReduceHandle)
+    	//下面的代码为什么要从mrtmp-test-i-j文件json解码到结构体中再写入文件：文件中使用json格式下面的英文注释说的很明白，json便于数据的序列化存储
+    	//在进行reduce操作的时候需要再将json中数据解码到结构体中进行必要的运算处理，处理完的结果再用Json格式写入到文件中
+    	for tmpfileScanner.Scan() {
+			tmpBytes := []byte(tmpfileScanner.Text())
+			var kv KeyValue
+			err := json.Unmarshal(tmpBytes, &kv)
+			checkError(err)
+			reduceFuncInput[kv.Key] = append(reduceFuncInput[kv.Key], kv.Value)
+		}
+
+	}
+	// enc := json.NewEncoder(file)
+	for k, v := range reduceFuncInput {
+		//向每个reduce结果文件中写入的也是json格式，key是去重过的key, value是将每个同样的key的value进行合并(reduceF)后的结果
+		mergeFileEnc.Encode(KeyValue{k, reduceF(k, v)})
+	}
 	//
 	// You will need to write this function.
 	//
