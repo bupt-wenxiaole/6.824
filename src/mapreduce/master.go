@@ -52,6 +52,8 @@ func newMaster(master string) (mr *Master) {
 	mr.shutdown = make(chan struct{})
 	mr.newCond = sync.NewCond(mr)
 	mr.doneChannel = make(chan bool)
+
+
 	return
 }
 
@@ -62,7 +64,7 @@ func Sequential(jobName string, files []string, nreduce int,
 	reduceF func(string, []string) string,
 ) (mr *Master) {
 	mr = newMaster("master")
-	go mr.run(jobName, files, nreduce, func(phase jobPhase) {
+	go mr.run(jobName, files, nreduce, func(phase jobPhase) {  //注意这种写法，传入函数指针的时候同时传入实现
 		switch phase {
 		case mapPhase:
 			for i, f := range mr.files {
@@ -73,7 +75,7 @@ func Sequential(jobName string, files []string, nreduce int,
 				doReduce(mr.jobName, i, mergeName(mr.jobName, i), len(mr.files), reduceF)
 			}
 		}
-	}, func() {
+	}, func() { //finish函数
 		mr.stats = []int{len(files) + nreduce}
 	})
 	return
@@ -139,7 +141,8 @@ func (mr *Master) run(jobName string, files []string, nreduce int,
 
 	fmt.Printf("%s: Starting Map/Reduce task %s\n", mr.address, mr.jobName)
 
-	schedule(mapPhase)
+	schedule(mapPhase)  //对于sequential的情况下，传入两个常量调用两次，相当于顺序执行map任务和reduce任务，sequential情况下传入的是在
+	//传入时实现的函数
 	schedule(reducePhase)
 	finish()
 	mr.merge()
