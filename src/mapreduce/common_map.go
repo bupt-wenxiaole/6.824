@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"encoding/json"
 )
-func checkError(e error) {
+func CheckError(e error) {
 	if(e != nil) {
 		log.Fatal(e)
 	}
@@ -58,7 +58,7 @@ func doMap(
 		//要进行运算的时候采用结构体，要写入文件使用json格式，中间的解码与编码采用json的marshall, unmarshall, decode, encode
 		reduceTaskNumber := ihash(kv.Key) % nReduce
 		err := whichFile[reduceTaskNumber].Encode(&kv)
-		checkError(err)
+		CheckError(err)
 	}
 	//
 	// You will need to write this function.

@@ -20,14 +20,14 @@ func doReduce(
   	mergeFileName := mergeName(jobName, reduceTaskNumber)   //每个reduce任务的结果存储在各自的这个文件里。
   	//最后这些文件可以进行merge也可以不进行merge
   	mergeFileHandle, err := os.Create(mergeFileName)
- 	checkError(err)
+ 	CheckError(err)
  	defer mergeFileHandle.Close()
   	mergeFileEnc := json.NewEncoder(mergeFileHandle)
   	reduceFuncInput := make(map[string] []string)
     for i := 0; i < nMap; i ++ {
     	tmpfileListToReduce := reduceName(jobName, i, reduceTaskNumber)
     	tmpfileListToReduceHandle, err := os.Open(tmpfileListToReduce)
-    	checkError(err)
+    	CheckError(err)
     	defer tmpfileListToReduceHandle.Close()
     	tmpfileScanner := bufio.NewScanner(tmpfileListToReduceHandle)
     	//下面的代码为什么要从mrtmp-test-i-j文件json解码到结构体中再写入文件：文件中使用json格式下面的英文注释说的很明白，json便于数据的序列化存储
@@ -36,7 +36,7 @@ func doReduce(
 			tmpBytes := []byte(tmpfileScanner.Text())
 			var kv KeyValue
 			err := json.Unmarshal(tmpBytes, &kv)
-			checkError(err)
+			CheckError(err)
 			reduceFuncInput[kv.Key] = append(reduceFuncInput[kv.Key], kv.Value)
 		}
 

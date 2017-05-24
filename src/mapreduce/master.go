@@ -30,6 +30,10 @@ type Master struct {
 	l        net.Listener
 	stats    []int
 }
+//下面的这段意思是Register是一种RPC方法，这种RPC方法的server是master(谁注册谁就是这种方法的server)。
+//当worker启动就绪可以执行任务的时候worker远程去call这种方法来向master报告其可以接受任务
+//同时worker也注册自己要执行的任务，(worker作为RPC server)master通过schedule来call worker执行任务，具体在worker.go中
+//TODO:read golang rpc documents and cocurrency documents
 
 // Register is an RPC method that is called by workers after they have started
 // up to report that they are ready to receive tasks.

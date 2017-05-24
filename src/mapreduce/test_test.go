@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 	"time"
-
+	
 	"bufio"
 	"log"
 	"os"
@@ -35,9 +35,9 @@ func MapFunc(file string, value string) (res []KeyValue) {
 
 // Just return key
 func ReduceFunc(key string, values []string) string {
-	//for _, e := range values {
-		//debug("Reduce %s %v\n", key, e)
-	//}
+	for _, e := range values {
+		debug("Reduce %s %v\n", key, e)
+	}
 	return ""
 }
 
