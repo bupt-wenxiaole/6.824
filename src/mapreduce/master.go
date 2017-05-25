@@ -88,6 +88,7 @@ func Sequential(jobName string, files []string, nreduce int,
 // helper function that sends information about all existing
 // and newly registered workers to channel ch. schedule()
 // reads ch to learn about workers.
+// master知道有多少个worker，需要让scheduler知道有多少个worker
 func (mr *Master) forwardRegistrations(ch chan string) {
 	i := 0
 	for {
@@ -111,10 +112,10 @@ func (mr *Master) forwardRegistrations(ch chan string) {
 func Distributed(jobName string, files []string, nreduce int, master string) (mr *Master) {
 	mr = newMaster(master)
 	mr.startRPCServer()
-	go mr.run(jobName, files, nreduce,
-		func(phase jobPhase) {
-			ch := make(chan string)
-			go mr.forwardRegistrations(ch)
+	go mr.run(jobName, files, nreduce, //某个函数传入函数指针意味着在下面的函数体内构造参数传给该函数进行调用   
+		func(phase jobPhase) { 
+			ch := make(chan string)    
+			go mr.forwardRegistrations(ch)   //这个forwardRegistrations一直在后台值守
 			schedule(mr.jobName, mr.files, mr.nReduce, phase, ch)
 		},
 		func() {
