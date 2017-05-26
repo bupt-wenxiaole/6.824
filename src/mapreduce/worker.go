@@ -28,6 +28,11 @@ type Worker struct {
 	l          net.Listener
 }
 
+type StatusReply struct {
+	nTasks int
+	concurrent int
+}
+
 // DoTask is called by the master when a new task is being scheduled on this
 // worker.
 func (wk *Worker) DoTask(arg *DoTaskArgs, _ *struct{}) error {
@@ -60,7 +65,16 @@ func (wk *Worker) DoTask(arg *DoTaskArgs, _ *struct{}) error {
 	fmt.Printf("%s: %v task #%d done\n", wk.name, arg.Phase, arg.TaskNumber)
 	return nil
 }
+//this func is for getting the worker's status parameters
+func (wk *Worker) GetStatus(_ *struct{}, res *StatusReply) error{
+	fmt.Printf("%s: schedule() ask me the status parameters\n", wk.name)
+	wk.Lock()
+	defer wk.Unlock()
+	res.nTasks = wk.nTasks
+	res.concurrent = wk.concurrent
+	return nil
 
+}
 // Shutdown is called by the master when all work has been completed.
 // We should respond with the number of tasks we have processed.
 func (wk *Worker) Shutdown(_ *struct{}, res *ShutdownReply) error {
@@ -84,7 +98,7 @@ func (wk *Worker) register(master string) {
 
 // RunWorker sets up a connection with the master, registers its address, and
 // waits for tasks to be scheduled. 
-func RunWorker(MasterAddress string, me string,
+func  RunWorker(MasterAddress string, me string,
 	MapFunc func(string, string) []KeyValue,
 	ReduceFunc func(string, []string) string,
 	nRPC int,
