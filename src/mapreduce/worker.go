@@ -61,16 +61,7 @@ func (wk *Worker) DoTask(arg *DoTaskArgs, _ *struct{}) error {
     fmt.Printf("%s: %v task #%d done\n", wk.name, arg.Phase, arg.TaskNumber)
     return nil
 }
-//this func is for getting the worker's status parameters
-//func (wk *Worker) GetStatus(_ *struct{}, res *StatusReply) error{
-//    fmt.Printf("%s: schedule() ask me the status parameters\n", wk.name)
-//    wk.Lock()
-//    defer wk.Unlock()
-//    res.nTasks = wk.nTasks
-//    res.concurrent = wk.concurrent
-//    return nil//
 
-//}
 // Shutdown is called by the master when all work has been completed.
 // We should respond with the number of tasks we have processed.
 func (wk *Worker) Shutdown(_ *struct{}, res *ShutdownReply) error {

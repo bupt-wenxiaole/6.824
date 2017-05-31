@@ -18,6 +18,7 @@ type workerStatus struct {
     nTasks int
     concurrent int
 }
+
 func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, registerChan chan string) {
 
 	var ntasks int
@@ -45,32 +46,41 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	// TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
 	// shecheduler启动一个go去持续读取registerChan并把这个新的worker添加到map里，并将这个key对应的两个状态参数初值
 	// 设置为0
-	workerStatus := make(map[string] *workerStatus)  
+	mapWorkerStatus := make(map[string] *workerStatus)  
 	var mapMutex = &sync.Mutex{}
 	go func() {
 		for {
 			newWorkerName := <- registerChan
 			mapMutex.Lock()
-			workerStatus[newWorkerName] = &workerStatus{0, 0}
+			mapWorkerStatus[newWorkerName] = &workerStatus{0, 0}
 			mapMutex.Unlock()
 		}
 	}
 
-	
 	switch phase {
 	case mapPhase: 
 		for i, f := range mapFiles {
 			//根据负载均衡算法选择合适的worker并且更新worker的状态
 			var workerSelected string
 			minTasks := 0x7fffffff
+			//lock()
 			for wk, wks := range workerStatus {
 				if wks.concurrent < 1 && wks.nTasks < minTasks {
 					minTasks = wks.nTasks
 					workerSelected = wk
 				}
 			}
+			//unlock()
 			//注意DoTask里面封装的是rpc.call()，call()是同步调用，远端执行结束后才会进行下一步
 			//这边scheduler使用goroutine并行去调用domap，scheduler可以使用channel构造wait和waitgroup来等待goroutine的结束
+			//设置一个goroutine专门去等待各个woker执行结束后对两个参数进行修改，防止在主线程中等待，用一个函数把
+			//dotask和这个发射信号的函数包裹起来统一用一个goroutine去执行
+			//注意现在这个版本默认远程RPC是可以成功，不存在失败的情况
+			//关于golang等待goroutine 退出
+			//https://stackoverflow.com/questions/18207772/how-to-wait-for-all-goroutines-to-finish-without-using-time-sleep
+			//for循环等待个数超出后会出现死锁的状况，考虑使用for range 和 close的情况
+			//今晚把这些代码补全！！！
+
 			func (wk *Worker) DoTask(arg *DoTaskArgs, _ *struct{}) error
 			go DoTask()
 	}
