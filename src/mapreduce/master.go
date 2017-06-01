@@ -114,7 +114,7 @@ func Distributed(jobName string, files []string, nreduce int, master string) (mr
 	mr.startRPCServer()
 	go mr.run(jobName, files, nreduce, //某个函数传入函数指针意味着在下面的函数体内构造参数传给该函数进行调用   
 		func(phase jobPhase) { 
-			ch := make(chan string)    
+			ch := make(chan string)           //注意map和reduce阶段分别各用一套新的chan
 			go mr.forwardRegistrations(ch)   //这个forwardRegistrations一直在后台值守
 			schedule(mr.jobName, mr.files, mr.nReduce, phase, ch)
 		},

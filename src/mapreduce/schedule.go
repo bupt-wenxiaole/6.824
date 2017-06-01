@@ -2,8 +2,6 @@ package mapreduce
 
 import "fmt"
 import "sync"
-import "fmt"
-import "math"
 
 //
 // schedule() starts and waits for all tasks in the given phase (Map
@@ -17,6 +15,26 @@ import "math"
 type workerStatus struct {
     nTasks int
     concurrent int
+}
+
+func doTaskWrapper(arg *DoTaskArgs, workerName string, m *sync.Mutex, mapWS map[string] *workerStatus) {
+	//Maps are reference types, so they are always passed by reference. You don't need a pointer.
+	//call is synchronous
+	m.Lock()
+	mapWS[workerName].concurrent++
+	m.Unlock()
+	var empty struct{}
+	ok := call(workerName, "Worker.DoTask", arg, &empty)
+	if ok == false {
+  		fmt.Printf("doTaskWrapper: RPC %s shutdown error\n", workerName)
+  		return 
+  		//TODO: if the RPC fails, do something
+  	}
+  	m.Lock()
+  	mapWS[workerName].concurrent--
+  	mapWS[workerName].nTasks++
+  	m.Unlock()
+
 }
 
 func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, registerChan chan string) {
@@ -33,8 +51,6 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	}
 
 	fmt.Printf("Schedule: %v %v tasks (%d I/Os)\n", ntasks, phase, n_other)
-
-
 	//master维护的是worker的各种信息，scheduler负责从worker列表中根据算法来挑选worker执行task
 	//执行了两次schedule()，一次是mapphase,一次是reducephase，意味着有两个scheduler
 	//两个scheduler之间的scheduler是顺序执行的，一个scheduler内调度的各个task是并行的，注意这里面的并发关系
@@ -51,26 +67,28 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	go func() {
 		for {
 			newWorkerName := <- registerChan
+			//TODO: THIS MAY CAUSE DEADLOCK
 			mapMutex.Lock()
 			mapWorkerStatus[newWorkerName] = &workerStatus{0, 0}
 			mapMutex.Unlock()
 		}
-	}
+	}()
 
 	switch phase {
-	case mapPhase: 
+	case mapPhase:
+		var wg sync.WaitGroup 
 		for i, f := range mapFiles {
 			//根据负载均衡算法选择合适的worker并且更新worker的状态
 			var workerSelected string
 			minTasks := 0x7fffffff
-			//lock()
-			for wk, wks := range workerStatus {
+			mapMutex.Lock()
+			for wk, wks := range mapWorkerStatus {
 				if wks.concurrent < 1 && wks.nTasks < minTasks {
 					minTasks = wks.nTasks
 					workerSelected = wk
 				}
 			}
-			//unlock()
+			mapMutex.Unlock()
 			//注意DoTask里面封装的是rpc.call()，call()是同步调用，远端执行结束后才会进行下一步
 			//这边scheduler使用goroutine并行去调用domap，scheduler可以使用channel构造wait和waitgroup来等待goroutine的结束
 			//设置一个goroutine专门去等待各个woker执行结束后对两个参数进行修改，防止在主线程中等待，用一个函数把
@@ -78,20 +96,32 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 			//注意现在这个版本默认远程RPC是可以成功，不存在失败的情况
 			//关于golang等待goroutine 退出
 			//https://stackoverflow.com/questions/18207772/how-to-wait-for-all-goroutines-to-finish-without-using-time-sleep
-			//for循环等待个数超出后会出现死锁的状况，考虑使用for range 和 close的情况
-			//今晚把这些代码补全！！！
 
-			func (wk *Worker) DoTask(arg *DoTaskArgs, _ *struct{}) error
-			go DoTask()
-	}
-			doMap(jobName, i, f, mr.nReduce, mapF)
+			var taskArgs *DoTaskArgs = &DoTaskArgs{jobName, f, phase, i, nReduce}
+			wg.Add(1)
+			go doTaskWrapper(taskArgs, workerSelected, mapMutex, mapWorkerStatus)
+
 		}
+		wg.Wait()
 	case reducePhase:
-		for i := 0; i < mr.nReduce; i++ {
-			doReduce(mr.jobName, i, mergeName(mr.jobName, i), len(mr.files), reduceF)
+		var wg sync.WaitGroup 
+		for i := 0; i < nReduce; i++ {
+			var workerSelected string
+			minTasks := 0x7fffffff
+			mapMutex.Lock()
+			for wk, wks := range mapWorkerStatus {
+				if wks.concurrent < 1 && wks.nTasks < minTasks {
+					minTasks = wks.nTasks
+					workerSelected = wk
+				}
+			}
+			mapMutex.Unlock()
+			var taskArgs *DoTaskArgs = &DoTaskArgs{jobName, "", phase, i, n_other}
+			wg.Add(1)
+			go doTaskWrapper(taskArgs, workerSelected, mapMutex, mapWorkerStatus)
 		}
+		wg.Wait()
 	}
-	
 	fmt.Printf("Schedule: %v phase done\n", phase)
 
 }

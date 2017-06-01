@@ -19,7 +19,7 @@ func (mr *Master) Shutdown(_, _ *struct{}) error {
 // startRPCServer starts the Master's RPC server. It continues accepting RPC
 // calls (Register in particular) for as long as the worker is alive.
 func (mr *Master) startRPCServer() {
-	rpcs := rpc.NewServer()
+	rpcs := rpc.NewServer() 
 	rpcs.Register(mr)
 	os.Remove(mr.address) // only needed for "unix"
 	l, e := net.Listen("unix", mr.address)
@@ -27,6 +27,12 @@ func (mr *Master) startRPCServer() {
 		log.Fatal("RegstrationServer", mr.address, " error: ", e)
 	}
 	mr.l = l
+
+
+
+
+
+	
 
 	// now that we are listening on the master address, can fork off
 	// accepting connections to another thread.
