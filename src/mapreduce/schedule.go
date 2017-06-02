@@ -17,11 +17,19 @@ type workerStatus struct {
     concurrent int
 }
 
-func doTaskWrapper(arg *DoTaskArgs, workerName string, m *sync.Mutex, mapWS map[string] *workerStatus) {
+func doTaskWrapper(arg *DoTaskArgs, workerName string, m *sync.Mutex, mapWS map[string] *workerStatus, wg *sync.WaitGroup) {
 	//Maps are reference types, so they are always passed by reference. You don't need a pointer.
 	//call is synchronous
+	if wg == nil{
+		fmt.Println("fuck it")
+	}
+	defer wg.Done()
 	m.Lock()
-	mapWS[workerName].concurrent++
+	mapWS[workerName].concurrent++  //这句访问空指针，不是因为mapWS引用没传进来，也不是因为mapWS没有初始化。具体可见下面这个例子
+	//https://play.golang.org/p/reEpyyfxn8
+	//golang map 有个特性，如果直接访问不存在的key对应的value，仍然会有返回值，不过是一个默认的未初始化值，例如int是0。指针为空
+	//正规的写法在检测map的key之前检查key是否存在于map当中
+	//还有一个要fix的问题就是wrong number ins : 1的问题，现在想的就是通过把public的方法包装成私有的方法，let's try it
 	m.Unlock()
 	var empty struct{}
 	ok := call(workerName, "Worker.DoTask", arg, &empty)
@@ -99,7 +107,7 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 
 			var taskArgs *DoTaskArgs = &DoTaskArgs{jobName, f, phase, i, nReduce}
 			wg.Add(1)
-			go doTaskWrapper(taskArgs, workerSelected, mapMutex, mapWorkerStatus)
+			go doTaskWrapper(taskArgs, workerSelected, mapMutex, mapWorkerStatus, &wg)
 
 		}
 		wg.Wait()
@@ -118,7 +126,7 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 			mapMutex.Unlock()
 			var taskArgs *DoTaskArgs = &DoTaskArgs{jobName, "", phase, i, n_other}
 			wg.Add(1)
-			go doTaskWrapper(taskArgs, workerSelected, mapMutex, mapWorkerStatus)
+			go doTaskWrapper(taskArgs, workerSelected, mapMutex, mapWorkerStatus, &wg)
 		}
 		wg.Wait()
 	}
