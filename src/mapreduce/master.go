@@ -66,7 +66,6 @@ func Sequential(jobName string, files []string, nreduce int,
 	mapF func(string, string) []KeyValue,
 	reduceF func(string, []string) string,
 ) (mr *Master) {
-	x
 	mr = newMaster("master")
 	go mr.run(jobName, files, nreduce, func(phase jobPhase) { //注意这种写法，传入函数指针的时候同时传入实现
 		switch phase {
