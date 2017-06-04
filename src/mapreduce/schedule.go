@@ -5,6 +5,7 @@ import "sync"
 import "time"
 import "log"
 import "math"
+
 //
 // schedule() starts and waits for all tasks in the given phase (Map
 // or Reduce). the mapFiles argument holds the names of the files that
@@ -15,30 +16,30 @@ import "math"
 // existing registered workers (if any) and new ones as they register.
 //
 type workerStatus struct {
-    nTasks int
-    concurrent int
+	nTasks     int
+	concurrent int
 }
 
 func keepTry(timeout time.Duration, attempts int, callback func() string) string {
-    t0 := time.Now()
-    if(attempts == 0) {
-    	log.Fatal("Retry select worker too many times")
-    }
-    for {
-        attempts--
-        worker := callback()
-        if worker != "" {
-            return worker
-    	}
-
-    	delta := time.Now().Sub(t0)
-    	if delta > timeout {
-        	log.Fatal("Retry select worker timeout!")
-    	}
+	t0 := time.Now()
+	if (attempts == 0) {
+		log.Fatal("Retry select worker too many times")
 	}
-    //time.Sleep(sleep)取消这句的注释在前面加上参数可以在每次重试期间等待一个间隔
+	for {
+		attempts--
+		worker := callback()
+		if worker != "" {
+			return worker
+		}
+
+		delta := time.Now().Sub(t0)
+		if delta > timeout {
+			log.Fatal("Retry select worker timeout!")
+		}
+	}
+	//time.Sleep(sleep)取消这句的注释在前面加上参数可以在每次重试期间等待一个间隔
 }
-func findMinLoadWorker(mapWS map[string] *workerStatus, mapMutex *sync.Mutex) string {
+func findMinLoadWorker(mapWS map[string]*workerStatus, mapMutex *sync.Mutex) string {
 	//根据负载均衡算法选择合适的worker并且更新worker的状态
 	var workerSelected string
 	minTasks := math.MaxInt32
@@ -58,11 +59,11 @@ func findMinLoadWorker(mapWS map[string] *workerStatus, mapMutex *sync.Mutex) st
 	return workerSelected
 }
 
-func doTaskWrapper(arg *DoTaskArgs, workerName string, m *sync.Mutex, 
-	mapWS map[string] *workerStatus, wg *sync.WaitGroup) {
+func doTaskWrapper(arg *DoTaskArgs, workerName string, m *sync.Mutex,
+	mapWS map[string]*workerStatus, wg *sync.WaitGroup) {
 	//Maps are reference types, so they are always passed by reference. You don't need a pointer.
 	//call is synchronous
-	if wg == nil{
+	if wg == nil {
 		fmt.Println("fuck it")
 	}
 	defer wg.Done()
@@ -74,12 +75,12 @@ func doTaskWrapper(arg *DoTaskArgs, workerName string, m *sync.Mutex,
 	var empty struct{}
 	ok := call(workerName, "Worker.DoTask", arg, &empty)
 	if ok == false {
-  		fmt.Printf("doTaskWrapper: RPC %s error\n", workerName)
-  		return 
-  		//TODO: if the RPC fails, do something
-  	}
-  	mapWS[workerName].concurrent--
-  	m.Unlock()
+		fmt.Printf("doTaskWrapper: RPC %s error\n", workerName)
+		return
+		//TODO: if the RPC fails, do something
+	}
+	mapWS[workerName].concurrent--
+	m.Unlock()
 }
 
 func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, registerChan chan string) {
@@ -92,7 +93,7 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	case reducePhase:
 		ntasks = nReduce
 		n_other = len(mapFiles)
-}
+	}
 
 	fmt.Printf("Schedule: %v %v tasks (%d I/Os)\n", ntasks, phase, n_other)
 	//master维护的是worker的各种信息，scheduler负责从worker列表中根据算法来挑选worker执行task
@@ -107,12 +108,12 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	// shecheduler启动一个go去持续读取registerChan并把这个新的worker添加到map里，并将这个key对应的两个状态参数初值
 	// 设置为0
 	// 首先明确一个问题，就是forwardregistion一直随时向管道中写东西，从这个管道中接收的goroutine需要一直在后台运行
-	mapWorkerStatus := make(map[string] *workerStatus)  
+	mapWorkerStatus := make(map[string]*workerStatus)
 	var mapMutex = &sync.Mutex{}
-	var wg sync.WaitGroup 
+	var wg sync.WaitGroup
 	go func() {
 		for {
-			newWorkerName := <- registerChan
+			newWorkerName := <-registerChan
 			//fmt.Println("get a new woker!")
 			mapMutex.Lock()
 			mapWorkerStatus[newWorkerName] = &workerStatus{0, 0}
@@ -124,7 +125,7 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	case mapPhase:
 		for i, f := range mapFiles {
 			var workerSelected string
-			workerSelected = keepTry(5*time.Second, -1, func () string {
+			workerSelected = keepTry(5*time.Second, -1, func() string {
 				worker := findMinLoadWorker(mapWorkerStatus, mapMutex)
 				return worker
 			})
@@ -144,11 +145,11 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 		//注意现在这个版本默认远程RPC是可以成功，不存在失败的情况
 		//关于golang等待goroutine 退出
 		//https://stackoverflow.com/questions/18207772/how-to-wait-for-all-goroutines-to-finish-without-using-time-sleep
-		
-	case reducePhase: 
+
+	case reducePhase:
 		for i := 0; i < nReduce; i++ {
 			var workerSelected string
-			workerSelected = keepTry(5*time.Second, -1, func () string {
+			workerSelected = keepTry(5*time.Second, -1, func() string {
 				worker := findMinLoadWorker(mapWorkerStatus, mapMutex)
 				return worker
 			})

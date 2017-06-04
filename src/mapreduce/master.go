@@ -30,6 +30,7 @@ type Master struct {
 	l        net.Listener
 	stats    []int
 }
+
 //下面的这段意思是Register是一种RPC方法，这种RPC方法的server是master(谁注册谁就是这种方法的server)。
 //当worker启动就绪可以执行任务的时候worker远程去call这种方法来向master报告其可以接受任务
 //同时worker也注册自己要执行的任务，(worker作为RPC server)master通过schedule来call worker执行任务，具体在worker.go中
@@ -45,7 +46,6 @@ func (mr *Master) Register(args *RegisterArgs, _ *struct{}) error {
 
 	// tell forwardRegistrations() that there's a new workers[] entry.
 	mr.newCond.Broadcast()
-
 	return nil
 }
 
@@ -57,7 +57,6 @@ func newMaster(master string) (mr *Master) {
 	mr.newCond = sync.NewCond(mr)
 	mr.doneChannel = make(chan bool)
 
-
 	return
 }
 
@@ -67,8 +66,9 @@ func Sequential(jobName string, files []string, nreduce int,
 	mapF func(string, string) []KeyValue,
 	reduceF func(string, []string) string,
 ) (mr *Master) {
+	x
 	mr = newMaster("master")
-	go mr.run(jobName, files, nreduce, func(phase jobPhase) {  //注意这种写法，传入函数指针的时候同时传入实现
+	go mr.run(jobName, files, nreduce, func(phase jobPhase) { //注意这种写法，传入函数指针的时候同时传入实现
 		switch phase {
 		case mapPhase:
 			for i, f := range mr.files {
@@ -113,9 +113,9 @@ func Distributed(jobName string, files []string, nreduce int, master string) (mr
 	mr = newMaster(master)
 	mr.startRPCServer()
 	go mr.run(jobName, files, nreduce, //某个函数传入函数指针意味着在下面的函数体内构造参数传给该函数进行调用   
-		func(phase jobPhase) { 
-			ch := make(chan string)           //注意map和reduce阶段分别各用一套新的chan
-			go mr.forwardRegistrations(ch)   //这个forwardRegistrations一直在后台值守
+		func(phase jobPhase) {
+			ch := make(chan string)        //注意map和reduce阶段分别各用一套新的chan
+			go mr.forwardRegistrations(ch) //这个forwardRegistrations一直在后台值守
 			schedule(mr.jobName, mr.files, mr.nReduce, phase, ch)
 		},
 		func() {
@@ -146,7 +146,7 @@ func (mr *Master) run(jobName string, files []string, nreduce int,
 
 	fmt.Printf("%s: Starting Map/Reduce task %s\n", mr.address, mr.jobName)
 
-	schedule(mapPhase)  //对于sequential的情况下，传入两个常量调用两次，相当于顺序执行map任务和reduce任务，sequential情况下传入的是在
+	schedule(mapPhase) //对于sequential的情况下，传入两个常量调用两次，相当于顺序执行map任务和reduce任务，sequential情况下传入的是在
 	//传入时实现的函数
 	schedule(reducePhase)
 	finish()
