@@ -1,16 +1,15 @@
 package mapreduce
 
 import (
-	"fmt"
-	"testing"
-	"time"
-	
 	"bufio"
+	"fmt"
 	"log"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
+	"testing"
+	"time"
 )
 
 const (
@@ -120,18 +119,19 @@ func makeInputs(num int) []string {
 // in /var/tmp. can't use current directory since
 // AFS doesn't support UNIX-domain sockets.
 func port(suffix string) string {
-	s := "/var/tmp/824-"
-	s += strconv.Itoa(os.Getuid()) + "/"
-	os.Mkdir(s, 0777)
-	s += "mr"
-	s += strconv.Itoa(os.Getpid()) + "-"
-	s += suffix
-	return s
+	//s := "/var/tmp/824-"
+	//s += strconv.Itoa(os.Getuid()) + "/"
+	//os.Mkdir(s, 0777)
+	//s += "mr"
+	//s += strconv.Itoa(os.Getpid()) + "-"
+	//s += suffix
+	s := "127.0.0.1"
+	return s + suffix
 }
 
 func setup() *Master {
 	files := makeInputs(nMap)
-	master := port("master")
+	master := port(":1234")
 	mr := Distributed("test", files, nReduce, master)
 	return mr
 }
@@ -162,7 +162,8 @@ func TestSequentialMany(t *testing.T) {
 func TestBasic(t *testing.T) {
 	mr := setup()
 	for i := 0; i < 2; i++ {
-		go RunWorker(mr.address, port("worker"+strconv.Itoa(i)),
+		//go RunWorker(mr.address, port("worker"+strconv.Itoa(i)),
+		go RunWorker(mr.address, port(":"+strconv.Itoa(1500+i)),
 			MapFunc, ReduceFunc, -1)
 	}
 	mr.Wait()
