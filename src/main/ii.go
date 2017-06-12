@@ -45,8 +45,7 @@ func reduceF(key string, values []string) string {
 	RemoveDuplicates(&values)
 	countDoc := len(values)
 	var result bytes.Buffer
-	result.WriteString(key)
-	result.WriteString(" "+strconv.Itoa(countDoc)+" ")
+	result.WriteString(strconv.Itoa(countDoc)+" ")
 	i := 0
 	for ; i < countDoc - 1; i++ {
 		result.WriteString(values[i]+",")
