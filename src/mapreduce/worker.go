@@ -9,7 +9,7 @@ import (
 	"log"
 	"net"
 	"net/rpc"
-	"os"
+	//"os"
 	"sync"
 )
 
@@ -97,8 +97,9 @@ func RunWorker(MasterAddress string, me string,
 	wk.nRPC = nRPC
 	rpcs := rpc.NewServer() //worker启动自己的RPC服务
 	rpcs.Register(wk)
-	os.Remove(me) // only needed for "unix"
-	l, e := net.Listen("unix", me)
+	//os.Remove(me) // only needed for "unix"
+	//l, e := net.Listen("unix", me)
+	l, e := net.Listen("tcp", me)
 	if e != nil {
 		log.Fatal("RunWorker: worker ", me, " error: ", e)
 	}
@@ -128,15 +129,12 @@ func RunWorker(MasterAddress string, me string,
 	debug("RunWorker %s exit\n", me)
 }
 
-func StartWorkerServer(MasterAddress string, me string,
-	MapFunc func(string, string) []KeyValue,
-	ReduceFunc func(string, []string) string,
-	nRPC int) {
+func StartWorkerServer(MasterAddress string, me string, nRPC int) {
 	fmt.Printf("Start worker's RPC server:\n" + me + "\n")
 	wk := new(Worker)
 	wk.name = me
-	// wk.Map = MapFunc
-	// wk.Reduce = ReduceFunc
+	wk.Map = MapFunc
+	wk.Reduce = ReduceFunc
 	wk.nRPC = nRPC
 	rpcs := rpc.NewServer() //worker启动自己的RPC服务
 	rpcs.Register(wk)
@@ -146,7 +144,9 @@ func StartWorkerServer(MasterAddress string, me string,
 		log.Fatal("RunWorker: worker ", me, " error: ", e)
 	}
 	wk.l = l
-	// wk.register(MasterAddress)
+	wk.register(MasterAddress)
+
+	// DON'T MODIFY CODE BELOW
 	for {
 		wk.Lock()
 		if wk.nRPC == 0 {
