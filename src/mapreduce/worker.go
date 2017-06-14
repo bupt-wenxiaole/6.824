@@ -9,7 +9,7 @@ import (
 	"log"
 	"net"
 	"net/rpc"
-	//"os"
+	// "os"
 	"sync"
 )
 
@@ -68,7 +68,7 @@ func (wk *Worker) Shutdown(_ *struct{}, res *ShutdownReply) error {
 	wk.Lock()
 	defer wk.Unlock()
 	res.Ntasks = wk.nTasks
-	wk.nRPC = 1 //在master端调用shutdown之后work还能接受一次远端的调用
+	wk.nRPC = 0 //在master端调用shutdown之后work还能接受一次远端的调用
 	return nil
 }
 
@@ -76,7 +76,9 @@ func (wk *Worker) Shutdown(_ *struct{}, res *ShutdownReply) error {
 func (wk *Worker) register(master string) {
 	args := new(RegisterArgs)
 	args.Worker = wk.name
+	fmt.Println("Start call Master.Register at ", master)
 	ok := call(master, "Master.Register", args, new(struct{}))
+	fmt.Println("Finish call Master.Register.")
 	if ok == false {
 		fmt.Printf("Register: RPC %s register error\n", master)
 	}
@@ -129,8 +131,11 @@ func RunWorker(MasterAddress string, me string,
 	debug("RunWorker %s exit\n", me)
 }
 
-func StartWorkerServer(MasterAddress string, me string, nRPC int) {
-	fmt.Printf("Start worker's RPC server:\n" + me + "\n")
+func StartWorkerServer(MasterAddress string, me string,
+	MapFunc func(string, string) []KeyValue,
+	ReduceFunc func(string, []string) string,
+	nRPC int) {
+	fmt.Println("Start worker's RPC server: ", me)
 	wk := new(Worker)
 	wk.name = me
 	wk.Map = MapFunc
@@ -138,8 +143,7 @@ func StartWorkerServer(MasterAddress string, me string, nRPC int) {
 	wk.nRPC = nRPC
 	rpcs := rpc.NewServer() //worker启动自己的RPC服务
 	rpcs.Register(wk)
-	os.Remove(me) // only needed for "unix"
-	l, e := net.Listen("unix", me)
+	l, e := net.Listen("tcp", me)
 	if e != nil {
 		log.Fatal("RunWorker: worker ", me, " error: ", e)
 	}

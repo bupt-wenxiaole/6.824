@@ -9,8 +9,8 @@ import (
 	// "strings"
 )
 
-func mapF(filename string, contents string) []mapreduce.KeyValue {
-	return NULL
+func mapF(filename string, contents string) (ret []mapreduce.KeyValue) {
+	return
 }
 
 func reduceF(key string, values []string) string {
@@ -21,7 +21,7 @@ func main() {
 	if len(os.Args) < 3 {
 		fmt.Printf("Wrong number of args!\n")
 	} else {
-		// mapreduce.StartWorkerServer(os.Args[1], os.Args[2], mapF, reduceF, os.Args[3])
-		mapreduce.StartWorkerServer("master", "/var/tmp/824-1000/mr4259-worker", mapF, reduceF, 0)
+		// mapreduce.RunWorker(os.Args[1], os.Args[2], mapF, reduceF, os.Args[3])
+		mapreduce.StartWorkerServer("127.0.0.1:7777", "127.0.0.1:7778", mapF, reduceF, -1)
 	}
 }
