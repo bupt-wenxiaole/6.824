@@ -26,6 +26,9 @@ type Worker struct {
 	nTasks     int // total tasks executed; protected by mutex
 	concurrent int // number of parallel DoTasks in this worker; mutex
 	l          net.Listener
+	// make a wait group so that the thread will shutdown
+	// only after all the go routines end
+	wg sync.WaitGroup
 }
 
 // DoTask is called by the master when a new task is being scheduled on this
@@ -131,6 +134,18 @@ func RunWorker(MasterAddress string, me string,
 	debug("RunWorker %s exit\n", me)
 }
 
+// The function servers as an intermediate check so that
+// after the shutdown function is called the listener will
+// be closed.
+func (wk *Worker) ServeAndCheck(conn net.Conn) {
+	rpcs.ServeConn(conn)
+	wk.Lock()
+	if wk.nRPC == 0 {
+		wk.l.Close()
+	}
+	wk.Unlock()
+}
+
 func StartWorkerServer(MasterAddress string, me string,
 	MapFunc func(string, string) []KeyValue,
 	ReduceFunc func(string, []string) string,
@@ -141,6 +156,7 @@ func StartWorkerServer(MasterAddress string, me string,
 	wk.Map = MapFunc
 	wk.Reduce = ReduceFunc
 	wk.nRPC = nRPC
+	wk.wg = sync.WaitGroup
 	rpcs := rpc.NewServer() //worker启动自己的RPC服务
 	rpcs.Register(wk)
 	l, e := net.Listen("tcp", me)
@@ -164,12 +180,14 @@ func StartWorkerServer(MasterAddress string, me string,
 		if err == nil {
 			wk.Lock()
 			wk.nRPC--
+			wgWorker.Add(1)
 			wk.Unlock()
-			go rpcs.ServeConn(conn)
+			go wk.ServeAndCheck(conn)
 		} else {
 			break
 		}
 	}
-	wk.l.Close()
+
+	wgWorker.Wait()
 	fmt.Printf("Test exit.\n")
 }
