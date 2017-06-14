@@ -1,0 +1,8 @@
+diskvd.go         pbd.go                     pg-grimm.txt               pg-tom_sawyer.txt     test-mr.sh
+ii.go             pg-being_ernest.txt        pg-huckleberry_finn.txt    pg-ulysses.txt        test-wc.sh
+lockc.go          pg-dorian_gray.txt         pg-les_miserables.txt      pg-war_and_peace.txt  viewd.go
+lockd.go          pg-dracula.txt             pg-metamorphosis.txt       startMaster.go        wc.go
+mr-challenge.txt  pg-emma.txt                pg-moby_dick.txt           startWorkerServer.go
+mr-testout.txt    pg-frankenstein.txt        pg-sherlock_holmes.txt     test1.txt
+pbc.go            pg-great_expectations.txt  pg-tale_of_two_cities.txt  test-ii.sh
+
