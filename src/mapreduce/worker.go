@@ -23,8 +23,9 @@ type Worker struct {
 	Reduce func(string, []string) string
 	nRPC   int // quit after this many RPCs; protected by mutex  在nRPC次RPC调用后worker退出，
 	//如果初值传入-1的话则意味着worker可以无限次执行RPC调用，注意这种写法
-	nTasks     int // total tasks executed; protected by mutex
-	concurrent int // number of parallel DoTasks in this worker; mutex
+	done       bool // killworker will make this variable true to stop the worker server
+	nTasks     int  // total tasks executed; protected by mutex
+	concurrent int  // number of parallel DoTasks in this worker; mutex
 	l          net.Listener
 	// make a wait group so that the thread will shutdown
 	// only after all the go routines end
@@ -49,6 +50,12 @@ func (wk *Worker) DoTask(arg *DoTaskArgs, _ *struct{}) error {
 		log.Fatal("Worker.DoTask: more than one DoTask sent concurrently to a single worker\n")
 	}
 
+	// The following code help to read the independent directory including
+	// the input files.
+
+	// absPath := os.Getenv("GOPATH")
+	// absPath = absPath + "/src/main/" + arg.File
+
 	switch arg.Phase {
 	case mapPhase:
 		doMap(arg.JobName, arg.TaskNumber, arg.File, arg.NumOtherPhase, wk.Map)
@@ -72,6 +79,7 @@ func (wk *Worker) Shutdown(_ *struct{}, res *ShutdownReply) error {
 	defer wk.Unlock()
 	res.Ntasks = wk.nTasks
 	wk.nRPC = 0 //在master端调用shutdown之后work还能接受一次远端的调用
+	wk.done = true
 	return nil
 }
 
@@ -137,10 +145,11 @@ func RunWorker(MasterAddress string, me string,
 // The function servers as an intermediate check so that
 // after the shutdown function is called the listener will
 // be closed.
-func (wk *Worker) ServeAndCheck(conn net.Conn) {
+func (wk *Worker) ServeAndCheck(rpcs *rpc.Server, conn net.Conn) {
 	rpcs.ServeConn(conn)
 	wk.Lock()
-	if wk.nRPC == 0 {
+	wk.wg.Done()
+	if wk.done == true {
 		wk.l.Close()
 	}
 	wk.Unlock()
@@ -156,7 +165,8 @@ func StartWorkerServer(MasterAddress string, me string,
 	wk.Map = MapFunc
 	wk.Reduce = ReduceFunc
 	wk.nRPC = nRPC
-	wk.wg = sync.WaitGroup
+	// wk.wg = sync.WaitGroup
+	wk.done = false
 	rpcs := rpc.NewServer() //worker启动自己的RPC服务
 	rpcs.Register(wk)
 	l, e := net.Listen("tcp", me)
@@ -180,14 +190,14 @@ func StartWorkerServer(MasterAddress string, me string,
 		if err == nil {
 			wk.Lock()
 			wk.nRPC--
-			wgWorker.Add(1)
+			wk.wg.Add(1)
 			wk.Unlock()
-			go wk.ServeAndCheck(conn)
+			go wk.ServeAndCheck(rpcs, conn)
 		} else {
 			break
 		}
 	}
 
-	wgWorker.Wait()
+	wk.wg.Wait()
 	fmt.Printf("Test exit.\n")
 }

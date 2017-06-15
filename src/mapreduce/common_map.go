@@ -1,16 +1,17 @@
 package mapreduce
 
 import (
-	"hash/fnv"
-	"os"
-	"log"
 	"bufio"
 	"bytes"
 	"encoding/json"
+	// "fmt"
+	"hash/fnv"
+	"log"
+	"os"
 )
 
 func CheckError(e error) {
-	if (e != nil) {
+	if e != nil {
 		log.Fatal(e)
 	}
 }
@@ -19,11 +20,11 @@ func CheckError(e error) {
 // (inFile), calls the user-defined map function (mapF) for that file's
 // contents, and partitions the output into nReduce intermediate files.
 func doMap(
-	jobName string,    // the name of the MapReduce job
+	jobName string, // the name of the MapReduce job
 	mapTaskNumber int, // which map task this is
 	inFile string,
 	nReduce int, // the number of reduce task that will be run ("R" in the paper)
-//mapTaskNumber和nReduce不一样，第一个变量指示的是map任务，第二个任务指示的reduce任务的个数!!
+	//mapTaskNumber和nReduce不一样，第一个变量指示的是map任务，第二个任务指示的reduce任务的个数!!
 	mapF func(file string, contents string) []KeyValue,
 ) {
 	//在sequentialsingle中得的infile是makeinput()制造出来的，nreduce=1
