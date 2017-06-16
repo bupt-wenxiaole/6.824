@@ -9,7 +9,6 @@ import (
 	"log"
 	"net"
 	"net/rpc"
-	//"os"
 	"sync"
 )
 
@@ -26,6 +25,8 @@ type Worker struct {
 	nTasks     int // total tasks executed; protected by mutex
 	concurrent int // number of parallel DoTasks in this worker; mutex
 	l          net.Listener
+	doneChan   chan bool
+	listenChan chan net.Conn
 }
 
 // DoTask is called by the master when a new task is being scheduled on this
@@ -69,6 +70,7 @@ func (wk *Worker) Shutdown(_ *struct{}, res *ShutdownReply) error {
 	defer wk.Unlock()
 	res.Ntasks = wk.nTasks
 	wk.nRPC = 1 //在master端调用shutdown之后work还能接受一次远端的调用
+	wk.doneChan <- true
 	return nil
 }
 
@@ -95,36 +97,48 @@ func RunWorker(MasterAddress string, me string,
 	wk.Map = MapFunc
 	wk.Reduce = ReduceFunc
 	wk.nRPC = nRPC
+	wk.doneChan = make(chan bool)
+	wk.listenChan = make(chan net.Conn)
+
 	rpcs := rpc.NewServer() //worker启动自己的RPC服务
 	rpcs.Register(wk)
-	//os.Remove(me) // only needed for "unix"
-	//l, e := net.Listen("unix", me)
 	l, e := net.Listen("tcp", me)
 	if e != nil {
 		log.Fatal("RunWorker: worker ", me, " error: ", e)
 	}
 	wk.l = l
 	wk.register(MasterAddress)
-	//调用master上的rpc服务
 
 	// DON'T MODIFY CODE BELOW
+loop:
 	for {
 		wk.Lock()
 		if wk.nRPC == 0 {
 			wk.Unlock()
-			break
+			break loop
 		}
 		wk.Unlock()
-		conn, err := wk.l.Accept()
-		if err == nil {
+		go wk.listenAndChan(rpcs)
+		select {
+		case conn := <-wk.listenChan:
 			wk.Lock()
 			wk.nRPC--
 			wk.Unlock()
 			go rpcs.ServeConn(conn)
-		} else {
-			break
+		case <-wk.doneChan:
+			break loop
 		}
 	}
+
 	wk.l.Close()
 	debug("RunWorker %s exit\n", me)
+}
+
+func (wk *Worker) listenAndChan(rpcs *rpc.Server) {
+	conn, err := wk.l.Accept()
+	if err == nil {
+		wk.listenChan <- conn
+	} else {
+		wk.doneChan <- true
+	}
 }

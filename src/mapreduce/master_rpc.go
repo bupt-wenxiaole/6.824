@@ -5,7 +5,6 @@ import (
 	"log"
 	"net"
 	"net/rpc"
-	//"os"
 )
 
 // Shutdown is an RPC method that shuts down the Master's RPC server.

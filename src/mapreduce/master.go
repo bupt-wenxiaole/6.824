@@ -111,7 +111,7 @@ func (mr *Master) forwardRegistrations(ch chan string) {
 func Distributed(jobName string, files []string, nreduce int, master string) (mr *Master) {
 	mr = newMaster(master)
 	mr.startRPCServer()
-	go mr.run(jobName, files, nreduce, //某个函数传入函数指针意味着在下面的函数体内构造参数传给该函数进行调用   
+	go mr.run(jobName, files, nreduce, //某个函数传入函数指针意味着在下面的函数体内构造参数传给该函数进行调用
 		func(phase jobPhase) {
 			ch := make(chan string)        //注意map和reduce阶段分别各用一套新的chan
 			go mr.forwardRegistrations(ch) //这个forwardRegistrations一直在后台值守
@@ -135,6 +135,7 @@ func Distributed(jobName string, files []string, nreduce int, master string) (mr
 // statistics are collected, and the master is shut down.
 //
 // Note that this implementation assumes a shared file system.
+
 func (mr *Master) run(jobName string, files []string, nreduce int,
 	schedule func(phase jobPhase),
 	finish func(),
@@ -149,6 +150,7 @@ func (mr *Master) run(jobName string, files []string, nreduce int,
 	//传入时实现的函数
 	schedule(reducePhase)
 	finish()
+
 	mr.merge()
 
 	fmt.Printf("%s: Map/Reduce task completed\n", mr.address)
