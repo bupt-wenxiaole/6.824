@@ -44,6 +44,6 @@ func main() {
 		// mapreduce.RunWorker(os.Args[1], os.Args[2], mapF, reduceF, os.Args[3])
 		// os.Args[1] represent the different ip:port for different worker
 		n, _ := strconv.Atoi(os.Args[3])
-		mapreduce.StartWorkerServer(os.Args[1], os.Args[2], mapF, reduceF, n)
+		mapreduce.RunWorker(os.Args[1], os.Args[2], mapF, reduceF, n)
 	}
 }

@@ -9,7 +9,6 @@ import (
 	"log"
 	"net"
 	"net/rpc"
-	// "os"
 	"sync"
 )
 
@@ -23,13 +22,11 @@ type Worker struct {
 	Reduce func(string, []string) string
 	nRPC   int // quit after this many RPCs; protected by mutex  在nRPC次RPC调用后worker退出，
 	//如果初值传入-1的话则意味着worker可以无限次执行RPC调用，注意这种写法
-	done       bool // killworker will make this variable true to stop the worker server
-	nTasks     int  // total tasks executed; protected by mutex
-	concurrent int  // number of parallel DoTasks in this worker; mutex
+	nTasks     int // total tasks executed; protected by mutex
+	concurrent int // number of parallel DoTasks in this worker; mutex
 	l          net.Listener
-	// make a wait group so that the thread will shutdown
-	// only after all the go routines end
-	wg sync.WaitGroup
+	doneChan   chan bool
+	listenChan chan net.Conn
 }
 
 // DoTask is called by the master when a new task is being scheduled on this
@@ -49,12 +46,6 @@ func (wk *Worker) DoTask(arg *DoTaskArgs, _ *struct{}) error {
 		// time to a given worker.
 		log.Fatal("Worker.DoTask: more than one DoTask sent concurrently to a single worker\n")
 	}
-
-	// The following code help to read the independent directory including
-	// the input files.
-
-	// absPath := os.Getenv("GOPATH")
-	// absPath = absPath + "/src/main/" + arg.File
 
 	switch arg.Phase {
 	case mapPhase:
@@ -78,8 +69,8 @@ func (wk *Worker) Shutdown(_ *struct{}, res *ShutdownReply) error {
 	wk.Lock()
 	defer wk.Unlock()
 	res.Ntasks = wk.nTasks
-	wk.nRPC = 0 //在master端调用shutdown之后work还能接受一次远端的调用
-	wk.done = true
+	wk.nRPC = 1 //在master端调用shutdown之后work还能接受一次远端的调用
+	wk.doneChan <- true
 	return nil
 }
 
@@ -87,9 +78,7 @@ func (wk *Worker) Shutdown(_ *struct{}, res *ShutdownReply) error {
 func (wk *Worker) register(master string) {
 	args := new(RegisterArgs)
 	args.Worker = wk.name
-	fmt.Println("Start call Master.Register at ", master)
 	ok := call(master, "Master.Register", args, new(struct{}))
-	fmt.Println("Finish call Master.Register.")
 	if ok == false {
 		fmt.Printf("Register: RPC %s register error\n", master)
 	}
@@ -108,96 +97,48 @@ func RunWorker(MasterAddress string, me string,
 	wk.Map = MapFunc
 	wk.Reduce = ReduceFunc
 	wk.nRPC = nRPC
+	wk.doneChan = make(chan bool)
+	wk.listenChan = make(chan net.Conn)
+
 	rpcs := rpc.NewServer() //worker启动自己的RPC服务
 	rpcs.Register(wk)
-	//os.Remove(me) // only needed for "unix"
-	//l, e := net.Listen("unix", me)
 	l, e := net.Listen("tcp", me)
 	if e != nil {
 		log.Fatal("RunWorker: worker ", me, " error: ", e)
 	}
 	wk.l = l
 	wk.register(MasterAddress)
-	//调用master上的rpc服务
 
 	// DON'T MODIFY CODE BELOW
+loop:
 	for {
 		wk.Lock()
 		if wk.nRPC == 0 {
 			wk.Unlock()
-			break
+			break loop
 		}
 		wk.Unlock()
-		conn, err := wk.l.Accept()
-		if err == nil {
+		go wk.listenAndChan(rpcs)
+		select {
+		case conn := <-wk.listenChan:
 			wk.Lock()
 			wk.nRPC--
 			wk.Unlock()
 			go rpcs.ServeConn(conn)
-		} else {
-			break
+		case <-wk.doneChan:
+			break loop
 		}
 	}
+
 	wk.l.Close()
 	debug("RunWorker %s exit\n", me)
 }
 
-// The function servers as an intermediate check so that
-// after the shutdown function is called the listener will
-// be closed.
-func (wk *Worker) ServeAndCheck(rpcs *rpc.Server, conn net.Conn) {
-	rpcs.ServeConn(conn)
-	wk.Lock()
-	wk.wg.Done()
-	if wk.done == true {
-		wk.l.Close()
+func (wk *Worker) listenAndChan(rpcs *rpc.Server) {
+	conn, err := wk.l.Accept()
+	if err == nil {
+		wk.listenChan <- conn
+	} else {
+		wk.doneChan <- true
 	}
-	wk.Unlock()
-}
-
-func StartWorkerServer(MasterAddress string, me string,
-	MapFunc func(string, string) []KeyValue,
-	ReduceFunc func(string, []string) string,
-	nRPC int) {
-	fmt.Println("Start worker's RPC server: ", me)
-	wk := new(Worker)
-	wk.name = me
-	wk.Map = MapFunc
-	wk.Reduce = ReduceFunc
-	wk.nRPC = nRPC
-	// wk.wg = sync.WaitGroup
-	wk.done = false
-	rpcs := rpc.NewServer() //worker启动自己的RPC服务
-	rpcs.Register(wk)
-	l, e := net.Listen("tcp", me)
-	if e != nil {
-		log.Fatal("RunWorker: worker ", me, " error: ", e)
-	}
-	wk.l = l
-	wk.register(MasterAddress)
-
-	// DON'T MODIFY CODE BELOW
-	for {
-		wk.Lock()
-		if wk.nRPC == 0 {
-			// this test only test whether the server can be started, so it will automatically stop
-			fmt.Printf("The worker's server will stop.\n")
-			wk.Unlock()
-			break
-		}
-		wk.Unlock()
-		conn, err := wk.l.Accept()
-		if err == nil {
-			wk.Lock()
-			wk.nRPC--
-			wk.wg.Add(1)
-			wk.Unlock()
-			go wk.ServeAndCheck(rpcs, conn)
-		} else {
-			break
-		}
-	}
-
-	wk.wg.Wait()
-	fmt.Printf("Test exit.\n")
 }

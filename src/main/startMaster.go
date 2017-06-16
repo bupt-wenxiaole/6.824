@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"mapreduce"
 	"os"
-	// "regexp"
-	// "strconv"
-	// "strings"
+	"strconv"
 )
 
 func getFiles() []string {
@@ -23,7 +21,8 @@ func main() {
 	} else {
 		// os.Args[3:] represent the slice of input files transfered from shell script
 		// the list of input files can also be get from the function getFiles
-		mr := mapreduce.Distributed("wcd", os.Args[3:], 1, "127.0.0.1:7769")
+		n, _ := strconv.Atoi(os.Args[3])
+		mr := mapreduce.Distributed(os.Args[1], os.Args[4:], n, os.Args[2])
 		mr.Wait()
 		fmt.Println("MapReduce task finishes.")
 	}
