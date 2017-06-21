@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"github.com/colinmarc/hdfs"
 	"log"
 	"os"
 	"sort"
@@ -12,12 +13,17 @@ import (
 // merge combines the results of the many reduce jobs into a single output file
 // XXX use merge sort
 func (mr *Master) merge() {
+	client, err := hdfs.New("hadoopmaster:9000")
+	if err != nil {
+		log.Fatal("doReduce: connect to HDFS: ", err)
+	}
+	defer client.Close()
 	debug("Merge phase")
 	kvs := make(map[string]string)
 	for i := 0; i < mr.nReduce; i++ {
 		p := mergeName(mr.jobName, i)
 		fmt.Printf("Merge: read %s\n", p)
-		file, err := os.Open(p)
+		file, err := client.Open(p)
 		if err != nil {
 			log.Fatal("Merge: ", err)
 		}
@@ -38,7 +44,7 @@ func (mr *Master) merge() {
 	}
 	sort.Strings(keys)
 
-	file, err := os.Create("mrtmp." + mr.jobName)
+	file, err := client.Create("/user/hadoop/data/output/" + "mrtmp." + mr.jobName)
 	if err != nil {
 		log.Fatal("Merge: create ", err)
 	}

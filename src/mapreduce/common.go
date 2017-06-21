@@ -19,8 +19,8 @@ func debug(format string, a ...interface{}) (n int, err error) {
 // jobPhase indicates whether a task is scheduled as a map or reduce task.
 type jobPhase string
 
-const (    //注意这个常量定义
-	mapPhase    jobPhase = "Map"    
+const ( //注意这个常量定义
+	mapPhase    jobPhase = "Map"
 	reducePhase          = "Reduce"
 )
 
@@ -34,10 +34,10 @@ type KeyValue struct {
 // reduceName constructs the name of the intermediate file which map task
 // <mapTask> produces for reduce task <reduceTask>.
 func reduceName(jobName string, mapTask int, reduceTask int) string {
-	return "mrtmp." + jobName + "-" + strconv.Itoa(mapTask) + "-" + strconv.Itoa(reduceTask)
+	return "/user/hadoop/data/out/" + "mrtmp." + jobName + "-" + strconv.Itoa(mapTask) + "-" + strconv.Itoa(reduceTask)
 }
 
 // mergeName constructs the name of the output file of reduce task <reduceTask>
 func mergeName(jobName string, reduceTask int) string {
-	return "mrtmp." + jobName + "-res-" + strconv.Itoa(reduceTask)
+	return "/user/hadoop/data/output/" + "mrtmp." + jobName + "-res-" + strconv.Itoa(reduceTask)
 }

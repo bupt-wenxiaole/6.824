@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/rpc"
 	"sync"
+	"time"
 )
 
 // Worker holds the state for a server waiting for DoTask or Shutdown RPCs
@@ -76,12 +77,20 @@ func (wk *Worker) Shutdown(_ *struct{}, res *ShutdownReply) error {
 
 // Tell the master we exist and ready to work
 func (wk *Worker) register(master string) {
-	args := new(RegisterArgs)
-	args.Worker = wk.name
-	ok := call(master, "Master.Register", args, new(struct{}))
-	if ok == false {
-		fmt.Printf("Register: RPC %s register error\n", master)
+	for i := 0; i < 30; i++ {
+		fmt.Println("Try to call Master.Register: ")
+		args := new(RegisterArgs)
+		args.Worker = wk.name
+		ok := call(master, "Master.Register", args, new(struct{}))
+		if ok == false {
+			fmt.Printf("Register: RPC %s register error\n", master)
+			time.Sleep(1000 * time.Millisecond)
+		} else {
+			fmt.Println("Call Master.Register done.")
+			return
+		}
 	}
+	fmt.Println("Stop tring to call Master.Register.")
 }
 
 // RunWorker sets up a connection with the master, registers its address, and
@@ -102,7 +111,7 @@ func RunWorker(MasterAddress string, me string,
 
 	rpcs := rpc.NewServer() //worker启动自己的RPC服务
 	rpcs.Register(wk)
-	l, e := net.Listen("tcp", me)
+	l, e := net.Listen("tcp", ":7778")
 	if e != nil {
 		log.Fatal("RunWorker: worker ", me, " error: ", e)
 	}
