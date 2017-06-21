@@ -1,9 +1,12 @@
 package mapreduce
 
 import (
-	"os"
 	"encoding/json"
-	"bufio"
+	"github.com/colinmarc/hdfs"
+	"log"
+	"os"
+	"sort"
+	"strconv"
 )
 
 // doReduce manages one reduce task: it reads the intermediate
@@ -11,42 +14,74 @@ import (
 // intermediate key/value pairs by key, calls the user-defined reduce function
 // (reduceF) for each key, and writes the output to disk.
 func doReduce(
-	jobName string,       // the name of the whole MapReduce job
+	jobName string, // the name of the whole MapReduce job
 	reduceTaskNumber int, // which reduce task this is
-	outFile string,       // write the output here
-	nMap int,             // the number of map tasks that were run ("M" in the paper)
+	outFile string, // write the output here
+	nMap int, // the number of map tasks that were run ("M" in the paper)
 	reduceF func(key string, values []string) string,
 ) {
+	client, err := hdfs.New("hadoopmaster:9000")
+	if err != nil {
+		log.Fatal("doReduce: connect to HDFS: ", err)
+	}
+	defer client.Close()
 
-	mergeFileName := mergeName(jobName, reduceTaskNumber) //每个reduce任务的结果存储在各自的这个文件里。
-	//最后这些文件可以进行merge也可以不进行merge
-	mergeFileHandle, err := os.Create(mergeFileName)
-	CheckError(err)
-	defer mergeFileHandle.Close()
-	mergeFileEnc := json.NewEncoder(mergeFileHandle)
-	reduceFuncInput := make(map[string][]string)
-	for i := 0; i < nMap; i ++ {
-		tmpfileListToReduce := reduceName(jobName, i, reduceTaskNumber)
-		tmpfileListToReduceHandle, err := os.Open(tmpfileListToReduce)
-		CheckError(err)
-		defer tmpfileListToReduceHandle.Close()
-		tmpfileScanner := bufio.NewScanner(tmpfileListToReduceHandle)
-		//下面的代码为什么要从mrtmp-test-i-j文件json解码到结构体中再写入文件：文件中使用json格式下面的英文注释说的很明白，json便于数据的序列化存储
-		//在进行reduce操作的时候需要再将json中数据解码到结构体中进行必要的运算处理，处理完的结果再用Json格式写入到文件中
-		for tmpfileScanner.Scan() {
-			tmpBytes := []byte(tmpfileScanner.Text())
-			var kv KeyValue
-			err := json.Unmarshal(tmpBytes, &kv)
-			CheckError(err)
-			reduceFuncInput[kv.Key] = append(reduceFuncInput[kv.Key], kv.Value)
+	keyValues := make(map[string][]string, 0)
+	for i := 0; i < nMap; i++ {
+		fileName := reduceName(jobName, i, reduceTaskNumber)
+		tmpName := os.Getenv("GOPATH") + "/src/main/mrtmp.doReduce_" + strconv.Itoa(reduceTaskNumber)
+		err = client.CopyToLocal(fileName, tmpName)
+		if err != nil {
+			log.Fatal("doReduce: copy file from HDFS: ", err)
 		}
+		defer os.Remove(tmpName)
 
+		file, err := os.Open(tmpName)
+		if err != nil {
+			log.Fatal("doReduce: open intermediate file ", fileName, " error: ", err)
+		}
+		defer file.Close()
+
+		dec := json.NewDecoder(file)
+		for {
+			var kv KeyValue
+
+			err := dec.Decode(&kv)
+			if err != nil {
+				break
+			}
+
+			_, ok := keyValues[kv.Key]
+			if !ok {
+				keyValues[kv.Key] = make([]string, 0)
+			}
+			keyValues[kv.Key] = append(keyValues[kv.Key], kv.Value)
+		}
 	}
-	// enc := json.NewEncoder(file)
-	for k, v := range reduceFuncInput {
-		//向每个reduce结果文件中写入的也是json格式，key是去重过的key, value是将每个同样的key的value进行合并(reduceF)后的结果
-		mergeFileEnc.Encode(KeyValue{k, reduceF(k, v)})
+
+	var keys []string
+
+	for k, _ := range keyValues {
+		keys = append(keys, k)
 	}
+	sort.Strings(keys)
+
+	mergeFileName := mergeName(jobName, reduceTaskNumber)
+	mergeFile, err := client.Create(mergeFileName)
+	if err != nil {
+		log.Fatal("doReduce: create merge file ", mergeFileName, " error: ", err)
+	}
+	defer mergeFile.Close()
+
+	enc := json.NewEncoder(mergeFile)
+	for _, k := range keys {
+		res := reduceF(k, keyValues[k])
+		err := enc.Encode(&KeyValue{k, res})
+		if err != nil {
+			log.Fatal("doReduce: encode error: ", err)
+		}
+	}
+
 	//
 	// You will need to write this function.
 	//

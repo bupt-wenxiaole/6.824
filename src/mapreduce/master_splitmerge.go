@@ -4,20 +4,34 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"github.com/colinmarc/hdfs"
 	"log"
 	"os"
 	"sort"
+	"strconv"
 )
 
 // merge combines the results of the many reduce jobs into a single output file
 // XXX use merge sort
 func (mr *Master) merge() {
+	client, err := hdfs.New("hadoopmaster:9000")
+	if err != nil {
+		log.Fatal("doReduce: connect to HDFS: ", err)
+	}
+	defer client.Close()
 	debug("Merge phase")
 	kvs := make(map[string]string)
 	for i := 0; i < mr.nReduce; i++ {
 		p := mergeName(mr.jobName, i)
-		fmt.Printf("Merge: read %s\n", p)
-		file, err := os.Open(p)
+		// fmt.Printf("Merge: read %s\n", p)
+		tmpName := os.Getenv("GOPATH") + "/src/main/mrtmp.merge_" + strconv.Itoa(i)
+		err = client.CopyToLocal(p, tmpName)
+		if err != nil {
+			log.Fatal("merge: copy file from HDFS: ", err)
+		}
+		defer os.Remove(tmpName)
+
+		file, err := os.Open(tmpName)
 		if err != nil {
 			log.Fatal("Merge: ", err)
 		}
@@ -38,7 +52,7 @@ func (mr *Master) merge() {
 	}
 	sort.Strings(keys)
 
-	file, err := os.Create("mrtmp." + mr.jobName)
+	file, err := client.Create("/user/hadoop/data/output/" + "mrtmp." + mr.jobName)
 	if err != nil {
 		log.Fatal("Merge: create ", err)
 	}
@@ -59,7 +73,7 @@ func removeFile(n string) {
 }
 
 // CleanupFiles removes all intermediate files produced by running mapreduce.
-func (mr *Master) CleanupFiles() {
+func (mr *Master) cleanupFiles() {
 	for i := range mr.files {
 		for j := 0; j < mr.nReduce; j++ {
 			removeFile(reduceName(mr.jobName, i, j))

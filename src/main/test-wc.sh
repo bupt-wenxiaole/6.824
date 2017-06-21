@@ -1,5 +1,5 @@
 #!/bin/bash
-go run wc.go master sequential pg-*.txt
+go run wc.go master sequential pg*.txt
 sort -n -k2 mrtmp.wcseq | tail -10 | diff - -b mr-testout.txt > diff.out
 if [ -s diff.out ]
 then

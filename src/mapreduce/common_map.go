@@ -1,20 +1,13 @@
 package mapreduce
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/json"
-	// "fmt"
+	"github.com/colinmarc/hdfs"
 	"hash/fnv"
 	"log"
 	"os"
+	"strconv"
 )
-
-func CheckError(e error) {
-	if e != nil {
-		log.Fatal(e)
-	}
-}
 
 // doMap manages one map task: it reads one of the input files
 // (inFile), calls the user-defined map function (mapF) for that file's
@@ -24,44 +17,64 @@ func doMap(
 	mapTaskNumber int, // which map task this is
 	inFile string,
 	nReduce int, // the number of reduce task that will be run ("R" in the paper)
-	//mapTaskNumber和nReduce不一样，第一个变量指示的是map任务，第二个任务指示的reduce任务的个数!!
 	mapF func(file string, contents string) []KeyValue,
 ) {
-	//在sequentialsingle中得的infile是makeinput()制造出来的，nreduce=1
-
-	debug("doMap: %s\n", jobName)
-	//将map中的内容读入到一个用空格分隔的string中
-
-	fileHandle, err := os.Open(inFile)
+	client, err := hdfs.New("hadoopmaster:9000")
 	if err != nil {
-		log.Fatal("fatal error in opening infile", err)
+		log.Fatal("doMap: connect to HDFS: ", err)
 	}
-	defer fileHandle.Close()
-	var buffer bytes.Buffer
-	fileScanner := bufio.NewScanner(fileHandle)
-	for fileScanner.Scan() {
-		buffer.WriteString(fileScanner.Text() + string(' '))
+	defer client.Close()
+
+	tmpName := os.Getenv("GOPATH") + "/src/main/mrtmp.doMap_" + strconv.Itoa(mapTaskNumber)
+	err = client.CopyToLocal(inFile, tmpName)
+	if err != nil {
+		log.Fatal("doMap: copy file from HDFS: ", err)
 	}
-	fileContents := buffer.String()
-	sliceFileContents := mapF(inFile, fileContents) //slicefilecontens is the resulting key/value pairs
-	//fmt.Println(sliceFileContents)
-	whichFile := make(map[int]*json.Encoder)
-	//create the mrtmp.xxx-i-j file and save the reduceindex2file map
-	for j := 0; j < nReduce; j++ {
-		mrTmpFileName := reduceName(jobName, mapTaskNumber, j)
-		tmpfileHandle, err := os.Create(mrTmpFileName)
+	defer os.Remove(tmpName)
+
+	inputFile, err := os.Open(tmpName)
+	if err != nil {
+		log.Fatal("doMap: open input file ", inFile, " error: ", err)
+	}
+	defer inputFile.Close()
+
+	fileInfo, err := inputFile.Stat()
+	if err != nil {
+		log.Fatal("doMap: getstat input file ", inFile, " error: ", err)
+	}
+
+	data := make([]byte, fileInfo.Size())
+	_, err = inputFile.Read(data)
+	if err != nil {
+		log.Fatal("doMap: read input file ", inFile, " error", err)
+	}
+
+	keyValues := mapF(inFile, string(data))
+
+	reduceFile := make([]*hdfs.FileWriter, nReduce)
+	enc := make([]*json.Encoder, nReduce)
+	for i := 0; i < nReduce; i++ {
+		fileName := reduceName(jobName, mapTaskNumber, i)
+		reduceFile[i], err = client.Create(fileName)
 		if err != nil {
-			log.Fatal("create file error")
+			log.Fatal("doMap: create intermediate file ", fileName, " error", err)
 		}
-		defer tmpfileHandle.Close()
-		whichFile[j] = json.NewEncoder(tmpfileHandle)
+		enc[i] = json.NewEncoder(reduceFile[i])
 	}
-	for _, kv := range sliceFileContents { //determine which reduce task intermediate file this key hash to
-		//要进行运算的时候采用结构体，要写入文件使用json格式，中间的解码与编码采用json的marshall, unmarshall, decode, encode
-		reduceTaskNumber := ihash(kv.Key) % nReduce
-		err := whichFile[reduceTaskNumber].Encode(&kv)
-		CheckError(err)
+
+	var i int
+	for _, kv := range keyValues {
+		i = ihash(kv.Key) % nReduce
+		err = enc[i].Encode(&kv)
+		if err != nil {
+			log.Fatal("doMap: encode error: ", err)
+		}
 	}
+
+	for i := 0; i < nReduce; i++ {
+		reduceFile[i].Close()
+	}
+
 	//
 	// You will need to write this function.
 	//

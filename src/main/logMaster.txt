@@ -1,0 +1,10 @@
+127.0.0.1:7769: Starting Map/Reduce task wcd
+Schedule: 16 Map tasks (3 I/Os)
+Schedule: Map phase done
+Schedule: 3 Reduce tasks (16 I/Os)
+Schedule: Reduce phase done
+Merge: read mrtmp.wcd-res-0
+Merge: read mrtmp.wcd-res-1
+Merge: read mrtmp.wcd-res-2
+127.0.0.1:7769: Map/Reduce task completed
+MapReduce task finishes.
