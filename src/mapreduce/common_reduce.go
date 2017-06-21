@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"github.com/colinmarc/hdfs"
 	"log"
-	// "os"
+	"os"
 	"sort"
+	"strconv"
 )
 
 // doReduce manages one reduce task: it reads the intermediate
@@ -24,10 +25,18 @@ func doReduce(
 		log.Fatal("doReduce: connect to HDFS: ", err)
 	}
 	defer client.Close()
+
 	keyValues := make(map[string][]string, 0)
 	for i := 0; i < nMap; i++ {
 		fileName := reduceName(jobName, i, reduceTaskNumber)
-		file, err := client.Open(fileName)
+		tmpName := os.Getenv("GOPATH") + "/src/main/mrtmp.doReduce_" + strconv.Itoa(reduceTaskNumber)
+		err = client.CopyToLocal(fileName, tmpName)
+		if err != nil {
+			log.Fatal("doReduce: copy file from HDFS: ", err)
+		}
+		defer os.Remove(tmpName)
+
+		file, err := os.Open(tmpName)
 		if err != nil {
 			log.Fatal("doReduce: open intermediate file ", fileName, " error: ", err)
 		}

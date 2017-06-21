@@ -5,7 +5,8 @@ import (
 	"github.com/colinmarc/hdfs"
 	"hash/fnv"
 	"log"
-	// "os"
+	"os"
+	"strconv"
 )
 
 // doMap manages one map task: it reads one of the input files
@@ -23,13 +24,24 @@ func doMap(
 		log.Fatal("doMap: connect to HDFS: ", err)
 	}
 	defer client.Close()
-	inputFile, err := client.Open(inFile)
+
+	tmpName := os.Getenv("GOPATH") + "/src/main/mrtmp.doMap_" + strconv.Itoa(mapTaskNumber)
+	err = client.CopyToLocal(inFile, tmpName)
+	if err != nil {
+		log.Fatal("doMap: copy file from HDFS: ", err)
+	}
+	defer os.Remove(tmpName)
+
+	inputFile, err := os.Open(tmpName)
 	if err != nil {
 		log.Fatal("doMap: open input file ", inFile, " error: ", err)
 	}
 	defer inputFile.Close()
 
-	fileInfo := inputFile.Stat()
+	fileInfo, err := inputFile.Stat()
+	if err != nil {
+		log.Fatal("doMap: getstat input file ", inFile, " error: ", err)
+	}
 
 	data := make([]byte, fileInfo.Size())
 	_, err = inputFile.Read(data)

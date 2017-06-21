@@ -15,7 +15,7 @@ import (
 
 // Worker holds the state for a server waiting for DoTask or Shutdown RPCs
 type Worker struct {
-	sync.Mutex //注意这种写法，使用了Golang的匿名字段和内嵌结构体
+	mutex *sync.Mutex //注意这种写法，使用了Golang的匿名字段和内嵌结构体
 	//Go中的继承是通过内嵌或组合来实现的
 
 	name   string
@@ -30,17 +30,25 @@ type Worker struct {
 	listenChan chan net.Conn
 }
 
+func (wk *Worker) lock() {
+	wk.mutex.Lock()
+}
+
+func (wk *Worker) unlock() {
+	wk.mutex.Unlock()
+}
+
 // DoTask is called by the master when a new task is being scheduled on this
 // worker.
 func (wk *Worker) DoTask(arg *DoTaskArgs, _ *struct{}) error {
-	fmt.Printf("%s: given %v task #%d on file %s (nios: %d)\n",
-		wk.name, arg.Phase, arg.TaskNumber, arg.File, arg.NumOtherPhase)
+	// fmt.Printf("%s: given %v task #%d on file %s (nios: %d)\n",
+	// wk.name, arg.Phase, arg.TaskNumber, arg.File, arg.NumOtherPhase)
 
-	wk.Lock()
+	wk.lock()
 	wk.nTasks += 1
 	wk.concurrent += 1
 	nc := wk.concurrent
-	wk.Unlock()
+	wk.unlock()
 
 	if nc > 1 {
 		// schedule() should never issue more than one RPC at a
@@ -55,9 +63,9 @@ func (wk *Worker) DoTask(arg *DoTaskArgs, _ *struct{}) error {
 		doReduce(arg.JobName, arg.TaskNumber, mergeName(arg.JobName, arg.TaskNumber), arg.NumOtherPhase, wk.Reduce)
 	}
 
-	wk.Lock()
+	wk.lock()
 	wk.concurrent -= 1
-	wk.Unlock()
+	wk.unlock()
 
 	fmt.Printf("%s: %v task #%d done\n", wk.name, arg.Phase, arg.TaskNumber)
 	return nil
@@ -67,8 +75,8 @@ func (wk *Worker) DoTask(arg *DoTaskArgs, _ *struct{}) error {
 // We should respond with the number of tasks we have processed.
 func (wk *Worker) Shutdown(_ *struct{}, res *ShutdownReply) error {
 	debug("Shutdown %s\n", wk.name)
-	wk.Lock()
-	defer wk.Unlock()
+	wk.lock()
+	defer wk.unlock()
 	res.Ntasks = wk.nTasks
 	wk.nRPC = 1 //在master端调用shutdown之后work还能接受一次远端的调用
 	wk.doneChan <- true
@@ -77,20 +85,19 @@ func (wk *Worker) Shutdown(_ *struct{}, res *ShutdownReply) error {
 
 // Tell the master we exist and ready to work
 func (wk *Worker) register(master string) {
+	fmt.Println(wk.name, ": Try to call Master.Register: ")
 	for i := 0; i < 30; i++ {
-		fmt.Println("Try to call Master.Register: ")
 		args := new(RegisterArgs)
 		args.Worker = wk.name
 		ok := call(master, "Master.Register", args, new(struct{}))
 		if ok == false {
-			fmt.Printf("Register: RPC %s register error\n", master)
 			time.Sleep(1000 * time.Millisecond)
 		} else {
-			fmt.Println("Call Master.Register done.")
+			fmt.Println(wk.name, ": Call Master.Register done.")
 			return
 		}
 	}
-	fmt.Println("Stop tring to call Master.Register.")
+	log.Fatal("%s: Register: RPC %s register error\n", wk.name, master)
 }
 
 // RunWorker sets up a connection with the master, registers its address, and
@@ -108,6 +115,7 @@ func RunWorker(MasterAddress string, me string,
 	wk.nRPC = nRPC
 	wk.doneChan = make(chan bool)
 	wk.listenChan = make(chan net.Conn)
+	wk.mutex = new(sync.Mutex)
 
 	rpcs := rpc.NewServer() //worker启动自己的RPC服务
 	rpcs.Register(wk)
@@ -121,18 +129,18 @@ func RunWorker(MasterAddress string, me string,
 	// DON'T MODIFY CODE BELOW
 loop:
 	for {
-		wk.Lock()
+		wk.lock()
 		if wk.nRPC == 0 {
-			wk.Unlock()
+			wk.unlock()
 			break loop
 		}
-		wk.Unlock()
+		wk.unlock()
 		go wk.listenAndChan(rpcs)
 		select {
 		case conn := <-wk.listenChan:
-			wk.Lock()
+			wk.lock()
 			wk.nRPC--
-			wk.Unlock()
+			wk.unlock()
 			go rpcs.ServeConn(conn)
 		case <-wk.doneChan:
 			break loop

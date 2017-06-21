@@ -53,11 +53,7 @@ func main() {
 	if len(os.Args) != 5 {
 		fmt.Println("Wrong number of args!")
 	} else {
-		// os.Args[3:] represent the slice of input files transfered from shell script
-		// the list of input files can also be get from the function getFiles
 		n, _ := strconv.Atoi(os.Args[3])
-		mr := mapreduce.Distributed(os.Args[1], getFiles(os.Args[4]), n, os.Args[2])
-		mr.Wait()
-		fmt.Println("MapReduce task finishes.")
+		mapreduce.RunMaster(os.Args[1], getFiles(os.Args[4]), n, os.Args[2])
 	}
 }
