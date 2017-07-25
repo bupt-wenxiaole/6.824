@@ -22,8 +22,9 @@ func main() {
 		// os.Args[3:] represent the slice of input files transfered from shell script
 		// the list of input files can also be get from the function getFiles
 		n, _ := strconv.Atoi(os.Args[3])
-		mr := mapreduce.Distributed(os.Args[1], os.Args[4:], n, os.Args[2])
-		mr.Wait()
+		//mr := mapreduce.Distributed(os.Args[1], os.Args[4:], n, os.Args[2])
+		//mr.wait()
+		mapreduce.RunMaster(os.Args[1], os.Args[4:], n, os.Args[2])
 		fmt.Println("MapReduce task finishes.")
 	}
 }

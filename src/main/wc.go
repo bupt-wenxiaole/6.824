@@ -8,6 +8,7 @@ import (
     "strconv"
     "regexp"
 
+    "time"
 )
 
 //
@@ -55,17 +56,24 @@ func reduceF(key string, values []string) string {
 // 2) Master (e.g., go run wc.go master localhost:7777 x1.txt .. xN.txt)
 // 3) Worker (e.g., go run wc.go worker localhost:7777 localhost:7778 &)
 func main() {
+    t := time.Now()
+    fmt.Println(t)
     if len(os.Args) < 4 {
         fmt.Printf("%s: see usage comments in file\n", os.Args[0])
     } else if os.Args[1] == "master" {
-        var mr *mapreduce.Master
+        /*var mr *mapreduce.Master
         if os.Args[2] == "sequential" {
             mr = mapreduce.Sequential("wcseq", os.Args[3:], 3, mapF, reduceF)
         } else {
-            mr = mapreduce.Distributed("wcseq", os.Args[3:], 3, os.Args[2])
+            mr = mapreduce.distributed("wcseq", os.Args[3:], 3, os.Args[2])
         }
-        mr.Wait()
+        //mr.wait()
+        print(mr)*/
+        mapreduce.RunMaster("wcseq", os.Args[3:], 3, os.Args[2])
     } else {
         mapreduce.RunWorker(os.Args[2], os.Args[3], mapF, reduceF, 100)
     }
+    t = time.Now()
+    fmt.Println(t)
+
 }
