@@ -1,11 +1,11 @@
 package mapreduce
 
 import (
-	"encoding/json"
 	"bufio"
+	"bytes"
+	"encoding/json"
 	"github.com/Alluxio/alluxio-go/option"
 	"log"
-	"bytes"
 )
 
 // doReduce manages one reduce task: it reads the intermediate
@@ -13,10 +13,10 @@ import (
 // intermediate key/value pairs by key, calls the user-defined reduce function
 // (reduceF) for each key, and writes the output to disk.
 func doReduce(
-	jobName string,       // the name of the whole MapReduce job
+	jobName string, // the name of the whole MapReduce job
 	reduceTaskNumber int, // which reduce task this is
-	outFile string,       // write the output here
-	nMap int,             // the number of map tasks that were run ("M" in the paper)
+	outFile string, // write the output here
+	nMap int, // the number of map tasks that were run ("M" in the paper)
 	reduceF func(key string, values []string) string,
 ) {
 	fs := SetUpClient("10.2.152.24")
@@ -32,7 +32,7 @@ func doReduce(
 	var mergeFileHandle bytes.Buffer
 	mergeFileEnc := json.NewEncoder(&mergeFileHandle)
 	reduceFuncInput := make(map[string][]string)
-	for i := 0; i < nMap; i ++ {
+	for i := 0; i < nMap; i++ {
 		tmpfileListToReduce := reduceName(jobName, i, reduceTaskNumber)
 		/*tmpfileListToReduceHandle, err := os.Open(tmpfileListToReduce)
 		CheckError(err)
@@ -84,7 +84,6 @@ func doReduce(
 		return
 	}
 	if _, err := io.Copy(fout, downloadBuff); err != nil {*/
-
 
 	//
 	// You will need to write this function.

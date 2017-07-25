@@ -2,23 +2,23 @@ package mapreduce
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"github.com/Alluxio/alluxio-go/option"
 	"log"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
-	"bytes"
-	"github.com/Alluxio/alluxio-go/option"
 )
 
 const (
 	nNumber = 100000
 	nMap    = 100
 	nReduce = 50
-	Read = "read"
-	Write = "write"
+	Read    = "read"
+	Write   = "write"
 )
 
 // Create input file with N numbers
@@ -42,7 +42,6 @@ func ReduceFunc(key string, values []string) string {
 	}
 	return ""
 }
-
 
 // Checks input file agaist output file: each input number should show up
 // in the output file in string sorted order
@@ -68,7 +67,7 @@ func check(t *testing.T, files []string) {
 	var lines []string
 	for _, f := range files {
 		inputId, err := fs.OpenFile(f, &option.OpenFile{})
-		if err !=nil {
+		if err != nil {
 			log.Fatal(err)
 		}
 		input, err := fs.Read(inputId)

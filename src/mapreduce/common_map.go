@@ -4,10 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"github.com/Alluxio/alluxio-go/option"
 	"hash/fnv"
 	"log"
-	"github.com/Alluxio/alluxio-go/option"
-	"fmt"
 )
 
 func CheckError(e error) {
@@ -15,7 +15,6 @@ func CheckError(e error) {
 		log.Fatal(e)
 	}
 }
-
 
 // doMap manages one map task: it reads one of the input files
 // (inFile), calls the user-defined map function (mapF) for that file's
@@ -42,7 +41,7 @@ func doMap(
 	if err != nil {
 		log.Fatal("doMap: read file from alluxio: ", err)
 	}
-	fileHandle, err:= fs.Read(readId)
+	fileHandle, err := fs.Read(readId)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -57,7 +56,7 @@ func doMap(
 	//fmt.Println(sliceFileContents)
 	whichFile := make(map[int]*json.Encoder)
 	//create the mrtmp.xxx-i-j file and save the reduceindex2file map
-	createId :=make([]int, nReduce)
+	createId := make([]int, nReduce)
 	ioBuff := make([]bytes.Buffer, nReduce)
 	for j := 0; j < nReduce; j++ {
 		mrTmpFileName := reduceName(jobName, mapTaskNumber, j)
@@ -67,8 +66,8 @@ func doMap(
 		}
 		defer tmpfileHandle.Close()
 		whichFile[j] = json.NewEncoder(tmpfileHandle)*/
-		fmt.Println("creating mrtmp.wcseq-",mapTaskNumber,"-",j)
-		createId[j] ,err = fs.CreateFile("/test/"+mrTmpFileName, &option.CreateFile{})
+		fmt.Println("creating mrtmp.wcseq-", mapTaskNumber, "-", j)
+		createId[j], err = fs.CreateFile("/test/"+mrTmpFileName, &option.CreateFile{})
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -80,8 +79,8 @@ func doMap(
 		err := whichFile[reduceTaskNumber].Encode(&kv)
 		CheckError(err)
 	}
-	for j:= 0;j < nReduce;j++ {
-		_, err= fs.Write(createId[j], &ioBuff[j])
+	for j := 0; j < nReduce; j++ {
+		_, err = fs.Write(createId[j], &ioBuff[j])
 		if err != nil {
 			log.Fatal(err)
 		}

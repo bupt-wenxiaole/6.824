@@ -2,8 +2,8 @@ package mapreduce
 
 import (
 	"fmt"
-	"strconv"
 	"github.com/Alluxio/alluxio-go"
+	"strconv"
 	"time"
 )
 
@@ -27,8 +27,8 @@ func SetUpClient(host string) *alluxio.Client {
 // jobPhase indicates whether a task is scheduled as a map or reduce task.
 type jobPhase string
 
-const (    //注意这个常量定义
-	mapPhase    jobPhase = "Map"    
+const ( //注意这个常量定义
+	mapPhase    jobPhase = "Map"
 	reducePhase          = "Reduce"
 )
 

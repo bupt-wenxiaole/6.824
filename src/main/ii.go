@@ -7,6 +7,7 @@ import "strconv"
 import "bytes"
 import "strings"
 import "regexp"
+
 // The mapping function is called once for each piece of the input.
 // In this framework, the key is the name of the file that is being processed,
 // and the value is the file's contents. The return value should be a slice of
@@ -30,8 +31,8 @@ func mapF(document string, value string) (res []mapreduce.KeyValue) {
 	for _, c := range components {
 		words := re.FindAllString(c, -1)
 		for _, w := range words {
-            kv := mapreduce.KeyValue{w, document}
-            res = append(res, kv)
+			kv := mapreduce.KeyValue{w, document}
+			res = append(res, kv)
 		}
 	}
 	return res
@@ -45,10 +46,10 @@ func reduceF(key string, values []string) string {
 	RemoveDuplicates(&values)
 	countDoc := len(values)
 	var result bytes.Buffer
-	result.WriteString(strconv.Itoa(countDoc)+" ")
+	result.WriteString(strconv.Itoa(countDoc) + " ")
 	i := 0
-	for ; i < countDoc - 1; i++ {
-		result.WriteString(values[i]+",")
+	for ; i < countDoc-1; i++ {
+		result.WriteString(values[i] + ",")
 	}
 	result.WriteString(values[i])
 	return result.String()

@@ -1,13 +1,12 @@
 package mapreduce
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/Alluxio/alluxio-go/option"
 	"log"
 	"sort"
-	"github.com/Alluxio/alluxio-go/option"
-	"bytes"
-
 )
 
 // merge combines the results of the many reduce jobs into a single output file
@@ -61,7 +60,7 @@ func (mr *Master) merge() {
 func removeFile(n string) {
 	//err := os.Remove(n)
 	fs := SetUpClient("10.2.152.24")
-	err := fs.Delete("/test/" + n, &option.Delete{})
+	err := fs.Delete("/test/"+n, &option.Delete{})
 	if err != nil {
 		log.Fatal("CleanupFiles ", err)
 	}
