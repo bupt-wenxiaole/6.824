@@ -16,14 +16,14 @@ masterPath=$GOPATH
 # export GOPATH=${masterPath}
 
 # change the relative directory so the input files can be open correctly
-cd /root/6.824/src/main
+cd ${masterPath}/src/main
 
 # start the master daemon and return immediately
 # the first para is the name of the job
 # the second para is the address of the master
 # the third para is the number of reduce tasks
 # the last para is the list of input files
-/usr/local/go/bin/go run startMaster.go test 10.2.152.24:7777 2 pg-being_ernest.txt pg-dorian_gray.txt> logMaster.txt&
+/usr/local/go/bin/go run startMaster.go test 10.2.152.24:7777 2 pg* > logMaster.txt&
 
 # copy the code to the slave node
 # ssh ${slaveName}@${slaveIp} "rm -r ${slavePath}"

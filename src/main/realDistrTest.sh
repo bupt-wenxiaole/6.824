@@ -30,29 +30,29 @@ go run startMaster.go wcd 127.0.0.1:7769 3 pg-*.txt > logMaster.txt&
 # scp -r ${masterPath}/src/mapreduce ${slaveName}@${slaveIp}:${slavePath}/src
 
 # start shell script to start the worker daemon
-ssh ${slaveName}@${slaveIp} "source /root/.bash_profile"
-ssh ${slaveName}@${slaveIp} "chmod +x /root/6.824/src/main/startWorker.sh"
-ssh ${slaveName}@${slaveIp} "/root/6.824/src/main/startWorker.sh"
+ssh ${slaveName}@${slaveIp} "source ~/.bash_profile"
+ssh ${slaveName}@${slaveIp} "chmod +x ${slavePath}/src/main/startWorker.sh"
+ssh ${slaveName}@${slaveIp} "${slavePath}/src/main/startWorker.sh"
 
 # check the output file
-#outputFile=${slavePath}/src/main/mrtmp.wcd
-#while true
-#do
-#	if [ -f ${outputFile} ]; then
-#		break
-#	fi
-#done
+outputFile=${slavePath}/src/main/mrtmp.wcd
+while true
+do
+	if [ -f ${outputFile} ]; then
+		break
+	fi
+done
 
 # test the output
-#cd ${masterPath}/src/main
-#sort -n -k 2 mrtmp.wcd | tail -10 | diff - -b mr-testout.txt > diff.out
-#if [ -s diff.out ]
-#then
-#echo "Failed test. Output should be as in mr-testout.txt. Your output differs as follows (from diff.out):" > /dev/stderr
-#  cat diff.out
-#else
-#  echo "Passed test" > /dev/stderr
-#fi
+cd ${masterPath}/src/main
+sort -n -k 2 mrtmp.wcd | tail -10 | diff - -b mr-testout.txt > diff.out
+if [ -s diff.out ]
+then
+echo "Failed test. Output should be as in mr-testout.txt. Your output differs as follows (from diff.out):" > /dev/stderr
+  cat diff.out
+else
+  echo "Passed test" > /dev/stderr
+fi
 
 # remove the intermediate files
-# rm mrtmp*
+ rm mrtmp*
