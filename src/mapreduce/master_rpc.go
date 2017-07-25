@@ -22,7 +22,7 @@ func (mr *Master) startRPCServer() {
 	rpcs.Register(mr)
 	// os.Remove(mr.address) // only needed for "unix"
 	// l, e := net.Listen("unix", mr.address)
-	l, e := net.Listen("tcp", mr.address)
+	l, e := net.Listen("tcp", ":7777")
 	if e != nil {
 		log.Fatal("RegstrationServer", mr.address, " error: ", e)
 	}

@@ -1,7 +1,9 @@
 #!/bin/bash
 
 # set the IP of slaves and the ssh user name
-slaveIp="127.0.0.1"
+slaveIp1="10.2.152.24"
+slaveIp2="10.2.152.22"
+slaveIp3="10.2.152.21"
 slaveName=$(whoami)
 # slavePath="/home/${slaveName}/go"
 
@@ -21,7 +23,7 @@ cd ${masterPath}/src/main
 # the second para is the address of the master
 # the third para is the number of reduce tasks
 # the last para is the list of input files
-go run startMaster.go wcd 127.0.0.1:7769 3 pg-*.txt > logMaster.txt&
+/usr/local/go/bin/go run startMaster.go test 10.2.152.24:7777 2 pg* > logMaster.txt&
 
 # copy the code to the slave node
 # ssh ${slaveName}@${slaveIp} "rm -r ${slavePath}"
@@ -30,29 +32,13 @@ go run startMaster.go wcd 127.0.0.1:7769 3 pg-*.txt > logMaster.txt&
 # scp -r ${masterPath}/src/mapreduce ${slaveName}@${slaveIp}:${slavePath}/src
 
 # start shell script to start the worker daemon
-ssh ${slaveName}@${slaveIp} "source ~/.bash_profile"
-ssh ${slaveName}@${slaveIp} "chmod +x ${slavePath}/src/main/startWorker.sh"
-ssh ${slaveName}@${slaveIp} "${slavePath}/src/main/startWorker.sh"
+ssh ${slaveName}@${slaveIp1} "chmod +x ${slavePath}/src/main/startWorker.sh"
+ssh ${slaveName}@${slaveIp1} "${slavePath}/src/main/startWorker.sh"
 
-# check the output file
-outputFile=${slavePath}/src/main/mrtmp.wcd
-while true
-do
-	if [ -f ${outputFile} ]; then
-		break
-	fi
-done
+ssh ${slaveName}@${slaveIp2} "chmod +x ${slavePath}/src/main/startWorker.sh"
+ssh ${slaveName}@${slaveIp2} "${slavePath}/src/main/startWorker.sh"
 
-# test the output
-cd ${masterPath}/src/main
-sort -n -k 2 mrtmp.wcd | tail -10 | diff - -b mr-testout.txt > diff.out
-if [ -s diff.out ]
-then
-echo "Failed test. Output should be as in mr-testout.txt. Your output differs as follows (from diff.out):" > /dev/stderr
-  cat diff.out
-else
-  echo "Passed test" > /dev/stderr
-fi
+ssh ${slaveName}@${slaveIp3} "chmod +x ${slavePath}/src/main/startWorker.sh"
+ssh ${slaveName}@${slaveIp3} "${slavePath}/src/main/startWorker.sh"
 
-# remove the intermediate files
- rm mrtmp*
+

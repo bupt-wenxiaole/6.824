@@ -1,9 +1,11 @@
 package mapreduce
 
 import (
-	"os"
-	"encoding/json"
 	"bufio"
+	"bytes"
+	"encoding/json"
+	"github.com/Alluxio/alluxio-go/option"
+	"log"
 )
 
 // doReduce manages one reduce task: it reads the intermediate
@@ -11,26 +13,41 @@ import (
 // intermediate key/value pairs by key, calls the user-defined reduce function
 // (reduceF) for each key, and writes the output to disk.
 func doReduce(
-	jobName string,       // the name of the whole MapReduce job
+	jobName string, // the name of the whole MapReduce job
 	reduceTaskNumber int, // which reduce task this is
-	outFile string,       // write the output here
-	nMap int,             // the number of map tasks that were run ("M" in the paper)
+	outFile string, // write the output here
+	nMap int, // the number of map tasks that were run ("M" in the paper)
 	reduceF func(key string, values []string) string,
 ) {
-
+	fs := SetUpClient("10.2.152.24")
 	mergeFileName := mergeName(jobName, reduceTaskNumber) //每个reduce任务的结果存储在各自的这个文件里。
 	//最后这些文件可以进行merge也可以不进行merge
-	mergeFileHandle, err := os.Create(mergeFileName)
+	/*mergeFileHandle, err := os.Create(mergeFileName)
 	CheckError(err)
-	defer mergeFileHandle.Close()
-	mergeFileEnc := json.NewEncoder(mergeFileHandle)
+	defer mergeFileHandle.Close()*/
+	mergeId, err := fs.CreateFile("/test/"+mergeFileName, &option.CreateFile{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	var mergeFileHandle bytes.Buffer
+	mergeFileEnc := json.NewEncoder(&mergeFileHandle)
 	reduceFuncInput := make(map[string][]string)
-	for i := 0; i < nMap; i ++ {
+	for i := 0; i < nMap; i++ {
 		tmpfileListToReduce := reduceName(jobName, i, reduceTaskNumber)
-		tmpfileListToReduceHandle, err := os.Open(tmpfileListToReduce)
+		/*tmpfileListToReduceHandle, err := os.Open(tmpfileListToReduce)
 		CheckError(err)
 		defer tmpfileListToReduceHandle.Close()
-		tmpfileScanner := bufio.NewScanner(tmpfileListToReduceHandle)
+		tmpfileScanner := bufio.NewScanner(tmpfileListToReduceHandle)*/
+		tmpFileId, err := fs.OpenFile("/test/"+tmpfileListToReduce, &option.OpenFile{})
+		if err != nil {
+			log.Fatal("doReduce:open file from alluxio: ", err)
+		}
+		stream, err := fs.Read(tmpFileId)
+		if err != nil {
+			log.Fatal("doReduce:read file from alluxio: ", err)
+		}
+		tmpfileScanner := bufio.NewScanner(stream)
+
 		//下面的代码为什么要从mrtmp-test-i-j文件json解码到结构体中再写入文件：文件中使用json格式下面的英文注释说的很明白，json便于数据的序列化存储
 		//在进行reduce操作的时候需要再将json中数据解码到结构体中进行必要的运算处理，处理完的结果再用Json格式写入到文件中
 		for tmpfileScanner.Scan() {
@@ -47,6 +64,27 @@ func doReduce(
 		//向每个reduce结果文件中写入的也是json格式，key是去重过的key, value是将每个同样的key的value进行合并(reduceF)后的结果
 		mergeFileEnc.Encode(KeyValue{k, reduceF(k, v)})
 	}
+	_, err = fs.Write(mergeId, &mergeFileHandle)
+	if err != nil {
+		log.Fatal("doReduce:write file to alluxio: ", err)
+	}
+	fs.Close(mergeId)
+	/*downloadId, err := fs.OpenFile("/test/"+mergeFileName, &option.OpenFile{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	downloadBuff, err := fs.Read(downloadId)
+	defer downloadBuff.Close()
+	defer fs.Close(downloadId)
+	filePath := "/root/"+mergeFileName
+	fout,err := os.Create(filePath)
+	defer fout.Close()
+	if err != nil{
+		fmt.Println(filePath,err)
+		return
+	}
+	if _, err := io.Copy(fout, downloadBuff); err != nil {*/
+
 	//
 	// You will need to write this function.
 	//

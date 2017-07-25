@@ -2,7 +2,9 @@ package mapreduce
 
 import (
 	"fmt"
+	"github.com/Alluxio/alluxio-go"
 	"strconv"
+	"time"
 )
 
 // Debugging enabled?
@@ -16,11 +18,17 @@ func debug(format string, a ...interface{}) (n int, err error) {
 	return
 }
 
+//set up the alluxio client within minute, return a client point
+func SetUpClient(host string) *alluxio.Client {
+	fs := alluxio.NewClient(host, 39999, time.Minute)
+	return fs
+}
+
 // jobPhase indicates whether a task is scheduled as a map or reduce task.
 type jobPhase string
 
-const (    //注意这个常量定义
-	mapPhase    jobPhase = "Map"    
+const ( //注意这个常量定义
+	mapPhase    jobPhase = "Map"
 	reducePhase          = "Reduce"
 )
 

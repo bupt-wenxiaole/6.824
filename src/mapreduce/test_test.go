@@ -2,9 +2,10 @@ package mapreduce
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"github.com/Alluxio/alluxio-go/option"
 	"log"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,6 +17,8 @@ const (
 	nNumber = 100000
 	nMap    = 100
 	nReduce = 50
+	Read    = "read"
+	Write   = "write"
 )
 
 // Create input file with N numbers
@@ -43,19 +46,35 @@ func ReduceFunc(key string, values []string) string {
 // Checks input file agaist output file: each input number should show up
 // in the output file in string sorted order
 func check(t *testing.T, files []string) {
-	output, err := os.Open("mrtmp.test")
+	//TODO:修改访问方式
+	//output, err := os.Open("mrtmp.test")
+	fs := SetUpClient("10.2.152.24")
+	outputId, err := fs.OpenFile("/mrtmp.test", &option.OpenFile{})
+	defer fs.Close(outputId)
+	if err != nil {
+		log.Fatal(err)
+	}
 	if err != nil {
 		log.Fatal("check: ", err)
 	}
-	defer output.Close()
+	output, err := fs.Read(outputId)
+	if err != nil {
+		log.Fatal()
+	}
+
+	//defer output.Close()
 
 	var lines []string
 	for _, f := range files {
-		input, err := os.Open(f)
+		inputId, err := fs.OpenFile(f, &option.OpenFile{})
+		if err != nil {
+			log.Fatal(err)
+		}
+		input, err := fs.Read(inputId)
 		if err != nil {
 			log.Fatal("check: ", err)
 		}
-		defer input.Close()
+		fs.Close(inputId)
 		inputScanner := bufio.NewScanner(input)
 		for inputScanner.Scan() {
 			lines = append(lines, inputScanner.Text())
@@ -99,18 +118,30 @@ func makeInputs(num int) []string {
 	var names []string
 	var i = 0
 	for f := 0; f < num; f++ {
-		names = append(names, fmt.Sprintf("824-mrinput-%d.txt", f))
-		file, err := os.Create(names[f])
+		names = append(names, fmt.Sprintf("/test/824-mrinput-%d.txt", f))
+		//TODO:修改创建方式
+		//file, err := os.Create(names[f])
+		fs := SetUpClient("10.2.152.24")
+		createId, err := fs.CreateFile(names[f], &option.CreateFile{})
 		if err != nil {
 			log.Fatal("mkInput: ", err)
 		}
-		w := bufio.NewWriter(file)
+		//TODO
+		//w := bufio.NewWriter(file)
+		byteArray := []byte{}
 		for i < (f+1)*(nNumber/num) {
-			fmt.Fprintf(w, "%d\n", i)
+			byteArray = append(byteArray, byte(i))
 			i++
 		}
-		w.Flush()
-		file.Close()
+		_, err = fs.Write(createId, bytes.NewBuffer(byteArray))
+		if err != nil {
+			log.Fatal(err)
+		}
+		fs.Close(createId)
+		//TODO
+		//w.Flush()
+		//file.Close()
+
 	}
 	return names
 }
@@ -125,19 +156,19 @@ func port(suffix string) string {
 	//s += "mr"
 	//s += strconv.Itoa(os.Getpid()) + "-"
 	//s += suffix
-	s := "127.0.0.1"
+	s := "10.2.152.24"
 	return s + suffix
 }
 
 func setup() *Master {
 	files := makeInputs(nMap)
 	master := port(":1234")
-	mr := Distributed("test", files, nReduce, master)
+	mr := distributed("test", files, nReduce, master)
 	return mr
 }
 
 func cleanup(mr *Master) {
-	mr.CleanupFiles()
+	mr.cleanupFiles()
 	for _, f := range mr.files {
 		removeFile(f)
 	}
@@ -145,7 +176,7 @@ func cleanup(mr *Master) {
 
 func TestSequentialSingle(t *testing.T) {
 	mr := Sequential("test", makeInputs(1), 1, MapFunc, ReduceFunc)
-	mr.Wait()
+	mr.wait()
 	check(t, mr.files)
 	checkWorker(t, mr.stats)
 	cleanup(mr)
@@ -153,7 +184,7 @@ func TestSequentialSingle(t *testing.T) {
 
 func TestSequentialMany(t *testing.T) {
 	mr := Sequential("test", makeInputs(5), 3, MapFunc, ReduceFunc)
-	mr.Wait()
+	mr.wait()
 	check(t, mr.files)
 	checkWorker(t, mr.stats)
 	cleanup(mr)
@@ -161,12 +192,16 @@ func TestSequentialMany(t *testing.T) {
 
 func TestBasic(t *testing.T) {
 	mr := setup()
-	for i := 0; i < 2; i++ {
+	/*for i := 0; i < 2; i++ {
 		//go RunWorker(mr.address, port("worker"+strconv.Itoa(i)),
 		go RunWorker(mr.address, port(":"+strconv.Itoa(1500+i)),
 			MapFunc, ReduceFunc, -1)
-	}
-	mr.Wait()
+	}*/
+	//let three workers run
+	go RunWorker("10.2.152.21", port(":"+strconv.Itoa(7778)), MapFunc, ReduceFunc, -1)
+	go RunWorker("10.2.152.22", port(":"+strconv.Itoa(7778)), MapFunc, ReduceFunc, -1)
+	go RunWorker("10.2.152.24", port(":"+strconv.Itoa(7778)), MapFunc, ReduceFunc, -1)
+	mr.wait()
 	check(t, mr.files)
 	checkWorker(t, mr.stats)
 	cleanup(mr)
@@ -179,7 +214,7 @@ func TestOneFailure(t *testing.T) {
 		MapFunc, ReduceFunc, 10)
 	go RunWorker(mr.address, port("worker"+strconv.Itoa(1)),
 		MapFunc, ReduceFunc, -1)
-	mr.Wait()
+	mr.wait()
 	check(t, mr.files)
 	checkWorker(t, mr.stats)
 	cleanup(mr)
