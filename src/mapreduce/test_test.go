@@ -199,9 +199,9 @@ func TestBasic(t *testing.T) {
 			MapFunc, ReduceFunc, -1)
 	}*/
 	//let three workers run
-	go RunWorker("10.2.152.21", port(":"+strconv.Itoa(1500)), MapFunc, ReduceFunc, -1)
-	go RunWorker("10.2.152.22", port(":"+strconv.Itoa(1500)), MapFunc, ReduceFunc, -1)
-	go RunWorker("10.2.152.24", port(":"+strconv.Itoa(1500)), MapFunc, ReduceFunc, -1)
+	go RunWorker("10.2.152.21", port(":"+strconv.Itoa(7778)), MapFunc, ReduceFunc, -1)
+	go RunWorker("10.2.152.22", port(":"+strconv.Itoa(7778)), MapFunc, ReduceFunc, -1)
+	go RunWorker("10.2.152.24", port(":"+strconv.Itoa(7778)), MapFunc, ReduceFunc, -1)
 	mr.wait()
 	check(t, mr.files)
 	checkWorker(t, mr.stats)

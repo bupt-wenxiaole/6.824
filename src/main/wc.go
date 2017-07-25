@@ -7,7 +7,6 @@ import (
     "strings"
     "strconv"
     "regexp"
-
     "time"
 )
 
@@ -65,7 +64,7 @@ func main() {
         if os.Args[2] == "sequential" {
             mr = mapreduce.Sequential("wcseq", os.Args[3:], 3, mapF, reduceF)
         } else {
-            mr = mapreduce.distributed("wcseq", os.Args[3:], 3, os.Args[2])
+            mr = mapreduce.Distributed("wcseq", os.Args[3:], 3, os.Args[2])
         }
         //mr.wait()
         print(mr)*/
