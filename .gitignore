@@ -120,3 +120,4 @@ cscope.po.out
 .idea/6.824.iml
 .idea/modules.xml
 .tags_sorted_by_file
+.DS_Store
