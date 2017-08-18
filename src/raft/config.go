@@ -77,7 +77,7 @@ func make_config(t *testing.T, n int, unreliable bool) *config {
 
 	return cfg
 }
-
+//
 // shut down a Raft server but save its persistent state.
 func (cfg *config) crash1(i int) {
 	cfg.disconnect(i)
@@ -118,7 +118,6 @@ func (cfg *config) crash1(i int) {
 //
 func (cfg *config) start1(i int) {
 	cfg.crash1(i)
-
 	// a fresh set of outgoing ClientEnd names.
 	// so that old crashed instance's ClientEnds can't send.
 	cfg.endnames[i] = make([]string, cfg.n)
@@ -340,6 +339,7 @@ func (cfg *config) nCommitted(index int) (int, interface{}) {
 				cfg.t.Fatalf("committed values do not match: index %v, %v, %v\n",
 					index, cmd, cmd1)
 			}
+			//commited的log是必然相同的，如果不同test fail，这个调用是用来检测有几个server认为commit
 			count += 1
 			cmd = cmd1
 		}
