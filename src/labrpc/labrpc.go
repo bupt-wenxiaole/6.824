@@ -10,7 +10,8 @@ package labrpc
 // so, while you can modify this code to help you debug, please
 // test against the original before submitting.
 //
-// adapted from Go net/rpc/server.go.
+// adapted from Go net/rpc/server.go. 
+// 从server.go中改写
 //
 // sends gob-encoded values to ensure that RPCs
 // don't include references to program objects.
@@ -62,7 +63,7 @@ import "time"
 type reqMsg struct {
 	endname  interface{} // name of sending ClientEnd
 	svcMeth  string      // e.g. "Raft.AppendEntries"
-	argsType reflect.Type
+	argsType reflect.Type // why reflect type
 	args     []byte
 	replyCh  chan replyMsg
 }
@@ -92,9 +93,10 @@ func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}) bo
 	qe.Encode(args)
 	req.args = qb.Bytes()
 
-	e.ch <- req
+	e.ch <- req 
 
-	rep := <-req.replyCh
+	rep := <-req.replyCh   //从请求rep的replych中读取rep
+	//在哪里向replych中写入rep
 	if rep.ok {
 		rb := bytes.NewBuffer(rep.reply)
 		rd := gob.NewDecoder(rb)
@@ -117,6 +119,7 @@ type Network struct {
 	servers        map[interface{}]*Server     // servers, by name
 	connections    map[interface{}]interface{} // endname -> servername
 	endCh          chan reqMsg
+	//client 和 leader通信
 }
 
 func MakeNetwork() *Network {
