@@ -75,6 +75,11 @@ type Raft struct {
 
 }
 
+func (rf *Raft) State() string {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return rf.state
+}
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
@@ -82,7 +87,17 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 
-	// Your code here (2A).
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	if state == "leader" {
+		term = rf.currentTerm
+		isleader = true
+	} 
+	else {
+		term = rf.currentTerm
+		isleader = false
+	}
+
 	return term, isleader
 }
 
@@ -126,6 +141,13 @@ func (rf *Raft) readPersist(data []byte) {
 //
 type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
+	Term int 
+	CandidatedId int
+	LastLogIndex int
+	LastLogTerm int
+	Term int
+	VoteGrantedtrue bool
+
 }
 
 //
@@ -133,14 +155,22 @@ type RequestVoteArgs struct {
 // field names must start with capital letters!
 //
 type RequestVoteReply struct {
-	// Your data here (2A).
+	VoteForCandidate bool
 }
 
+func afterBetween(min time.Duration, max time.Duration) <-chan time.Time {
+	rand := rand.New(rand.NewSource(time.Now().UnixNano()))
+	d, delta := min, (max - min)
+	if delta > 0 {
+		d += time.Duration(rand.Int63n(int64(delta)))
+	}
+	return time.After(d)
+}
 //
 // example RequestVote RPC handler.
 //
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	// Your code here (2A, 2B).
+	
 }
 
 //
