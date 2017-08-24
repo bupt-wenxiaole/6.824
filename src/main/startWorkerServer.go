@@ -1,40 +1,27 @@
 package main
 
 import (
-	"fmt"
 	"mapreduce"
-	"os"
-	"regexp"
-	"strconv"
 	"strings"
+	"unicode"
+	"strconv"
+	"os"
+	"fmt"
 )
 
-// the map function which will be execurated by the workers
-func mapF(filename string, contents string) []mapreduce.KeyValue {
-	components := strings.Fields(contents)
-	re := regexp.MustCompile("[A-Za-z]+")
-	var res []mapreduce.KeyValue
-	for _, c := range components {
-		words := re.FindAllString(c, -1) //从components中提取单词
-		for _, w := range words {
-			kv := mapreduce.KeyValue{w, "1"}
-			res = append(res, kv)
-		}
-
+func mapF(document string, value string) (res[]mapreduce.KeyValue) {
+	res = make([]mapreduce.KeyValue, 0)
+	ss := strings.FieldsFunc(value, func(c rune) bool {
+		return !unicode.IsLetter(c)
+})
+	for _, s := range ss {
+		res = append(res, mapreduce.KeyValue{s, "1"})
 	}
-	return res
+	return
 }
 
-// the reduce function which will be execurated by the workers
 func reduceF(key string, values []string) string {
-	count := 0 //这个key的单词计数
-	for _, e := range values {
-		i, err := strconv.Atoi(e)
-		mapreduce.CheckError(err)
-		count += i
-
-	}
-	return strconv.Itoa(count)
+	return strconv.Itoa(len(values))
 }
 
 func main() {
