@@ -29,7 +29,7 @@ import "labrpc"
 // as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
 // tester) on the same server, via the applyCh passed to Make().
-//
+// 
 type ApplyMsg struct {
 	Index       int
 	Command     interface{}
@@ -37,6 +37,19 @@ type ApplyMsg struct {
 	Snapshot    []byte // ignore for lab2; only used in lab3
 }
 
+type LogEntries struct {
+	command interface{}
+	term int
+}
+//log entries 外面再包一层
+type Log struct {
+	//ApplyFunc func(*LogEntries) (interface{}, error)
+	entries []*LogEntries
+	commitIndex int
+	mutex sync.Mutex
+	startIndex int
+	initialized bool
+}
 //
 // A Go object implementing a single Raft peer.
 //
@@ -45,20 +58,46 @@ type Raft struct {
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
 	me        int                 // this peer's index into peers[]
-
+	leader    int                 // this peer's leader
+	state     string
+	currentTerm int
+	votedFor int
+	log  *Log
+	commitIndex int
+	lastApplied int
+    nextIndex   []int              //对于每一个服务器，
+    //需要发送给他的下一个日志条目的索引值（初始化为领导人最后索引值加一） 
+    matchIndex  []int              //对于每一个服务器，已经复制给他的日志的最高索引值      
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
 
+
 }
 
+func (rf *Raft) State() string {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return rf.state
+}
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
 
 	var term int
 	var isleader bool
-	// Your code here (2A).
+
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	if state == "leader" {
+		term = rf.currentTerm
+		isleader = true
+	} 
+	else {
+		term = rf.currentTerm
+		isleader = false
+	}
+
 	return term, isleader
 }
 
@@ -102,6 +141,13 @@ func (rf *Raft) readPersist(data []byte) {
 //
 type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
+	Term int 
+	CandidatedId int
+	LastLogIndex int
+	LastLogTerm int
+	Term int
+	VoteGrantedtrue bool
+
 }
 
 //
@@ -109,14 +155,22 @@ type RequestVoteArgs struct {
 // field names must start with capital letters!
 //
 type RequestVoteReply struct {
-	// Your data here (2A).
+	VoteForCandidate bool
 }
 
+func afterBetween(min time.Duration, max time.Duration) <-chan time.Time {
+	rand := rand.New(rand.NewSource(time.Now().UnixNano()))
+	d, delta := min, (max - min)
+	if delta > 0 {
+		d += time.Duration(rand.Int63n(int64(delta)))
+	}
+	return time.After(d)
+}
 //
 // example RequestVote RPC handler.
 //
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	// Your code here (2A, 2B).
+	
 }
 
 //
@@ -189,6 +243,8 @@ func (rf *Raft) Kill() {
 }
 
 //
+
+
 // the service or tester wants to create a Raft server. the ports
 // of all the Raft servers (including this one) are in peers[]. this
 // server's port is peers[me]. all the servers' peers[] arrays
@@ -198,7 +254,7 @@ func (rf *Raft) Kill() {
 // tester or service expects Raft to send ApplyMsg messages.
 // Make() must return quickly, so it should start goroutines
 // for any long-running work.
-//
+//c
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
 	rf := &Raft{}

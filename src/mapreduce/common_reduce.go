@@ -1,120 +1,100 @@
 package mapreduce
 
 import (
-	"bufio"
-	"bytes"
-	"encoding/json"
+	"fmt"
+	"sort"
 	"github.com/Alluxio/alluxio-go/option"
 	"log"
+	"bytes"
+	"io/ioutil"
+	"time"
+	"github.com/json-iterator/go"
 )
 
-// doReduce manages one reduce task: it reads the intermediate
+// doReduce does the job of a reduce worker: it reads the intermediate
 // key/value pairs (produced by the map phase) for this task, sorts the
 // intermediate key/value pairs by key, calls the user-defined reduce function
 // (reduceF) for each key, and writes the output to disk.
 func doReduce(
 	jobName string, // the name of the whole MapReduce job
 	reduceTaskNumber int, // which reduce task this is
-	outFile string, // write the output here
+	outFile string,
 	nMap int, // the number of map tasks that were run ("M" in the paper)
 	reduceF func(key string, values []string) string,
 ) {
-	fs := SetUpClient("10.2.152.24")
-	mergeFileName := mergeName(jobName, reduceTaskNumber) //每个reduce任务的结果存储在各自的这个文件里。
-	//最后这些文件可以进行merge也可以不进行merge
-	/*mergeFileHandle, err := os.Create(mergeFileName)
-	CheckError(err)
-	defer mergeFileHandle.Close()*/
-	mergeId, err := fs.CreateFile("/test/"+mergeFileName, &option.CreateFile{})
-	if err != nil {
-		log.Fatal(err)
-	}
-	var mergeFileHandle bytes.Buffer
-	mergeFileEnc := json.NewEncoder(&mergeFileHandle)
-	reduceFuncInput := make(map[string][]string)
-	for i := 0; i < nMap; i++ {
-		tmpfileListToReduce := reduceName(jobName, i, reduceTaskNumber)
-		/*tmpfileListToReduceHandle, err := os.Open(tmpfileListToReduce)
-		CheckError(err)
-		defer tmpfileListToReduceHandle.Close()
-		tmpfileScanner := bufio.NewScanner(tmpfileListToReduceHandle)*/
-		tmpFileId, err := fs.OpenFile("/test/"+tmpfileListToReduce, &option.OpenFile{})
-		if err != nil {
-			log.Fatal("doReduce:open file from alluxio: ", err)
-		}
-		stream, err := fs.Read(tmpFileId)
-		if err != nil {
-			log.Fatal("doReduce:read file from alluxio: ", err)
-		}
-		tmpfileScanner := bufio.NewScanner(stream)
-
-		//下面的代码为什么要从mrtmp-test-i-j文件json解码到结构体中再写入文件：文件中使用json格式下面的英文注释说的很明白，json便于数据的序列化存储
-		//在进行reduce操作的时候需要再将json中数据解码到结构体中进行必要的运算处理，处理完的结果再用Json格式写入到文件中
-		for tmpfileScanner.Scan() {
-			tmpBytes := []byte(tmpfileScanner.Text())
-			var kv KeyValue
-			err := json.Unmarshal(tmpBytes, &kv)
-			CheckError(err)
-			reduceFuncInput[kv.Key] = append(reduceFuncInput[kv.Key], kv.Value)
-		}
-
-	}
-	// enc := json.NewEncoder(file)
-	for k, v := range reduceFuncInput {
-		//向每个reduce结果文件中写入的也是json格式，key是去重过的key, value是将每个同样的key的value进行合并(reduceF)后的结果
-		mergeFileEnc.Encode(KeyValue{k, reduceF(k, v)})
-	}
-	_, err = fs.Write(mergeId, &mergeFileHandle)
-	if err != nil {
-		log.Fatal("doReduce:write file to alluxio: ", err)
-	}
-	fs.Close(mergeId)
-	/*downloadId, err := fs.OpenFile("/test/"+mergeFileName, &option.OpenFile{})
-	if err != nil {
-		log.Fatal(err)
-	}
-	downloadBuff, err := fs.Read(downloadId)
-	defer downloadBuff.Close()
-	defer fs.Close(downloadId)
-	filePath := "/root/"+mergeFileName
-	fout,err := os.Create(filePath)
-	defer fout.Close()
-	if err != nil{
-		fmt.Println(filePath,err)
-		return
-	}
-	if _, err := io.Copy(fout, downloadBuff); err != nil {*/
-
-	//
+	// TODO:
 	// You will need to write this function.
+	// You can find the intermediate file for this reduce task from map task number
+	// m using reduceName(jobName, m, reduceTaskNumber).
+	// Remember that you've encoded the values in the intermediate files, so you
+	// will need to decode them. If you chose to use JSON, you can read out
+	// multiple decoded values by creating a decoder, and then repeatedly calling
+	// .Decode() on it until Decode() returns an error.
 	//
-	// You'll need to read one intermediate file from each map task;
-	// reduceName(jobName, m, reduceTaskNumber) yields the file
-	// name from map task m.
+	// You should write the reduced output in as JSON encoded KeyValue
+	// objects to a file named mergeName(jobName, reduceTaskNumber). We require
+	// you to use JSON here because that is what the merger than combines the
+	// output from all the reduce tasks expects. There is nothing "special" about
+	// JSON -- it is just the marshalling format we chose to use. It will look
+	// something like this:
 	//
-	// Your doMap() encoded the key/value pairs in the intermediate
-	// files, so you will need to decode them. If you used JSON, you can
-	// read and decode by creating a decoder and repeatedly calling
-	// .Decode(&kv) on it until it returns an error.
-	//
-	// You may find the first example in the golang sort package
-	// documentation useful.
-	//
-	// reduceF() is the application's reduce function. You should
-	// call it once per distinct key, with a slice of all the values
-	// for that key. reduceF() returns the reduced value for that key.
-	//
-	// You should write the reduce output as JSON encoded KeyValue
-	// objects to the file named outFile. We require you to use JSON
-	// because that is what the merger than combines the output
-	// from all the reduce tasks expects. There is nothing special about
-	// JSON -- it is just the marshalling format we chose to use. Your
-	// output code will look something like this:
-	//
-	// enc := json.NewEncoder(file)
-	// for key := ... {
+	// enc := json.NewEncoder(mergeFile)
+	// for key in ... {
 	// 	enc.Encode(KeyValue{key, reduceF(...)})
 	// }
 	// file.Close()
-	//
+	fs := SetUpClient("10.2.152.24")
+	keyValues := make(map[string][]string)
+	ioBuff := make([]bytes.Buffer, nMap)
+	fmt.Println("decode and do reduce at ",time.Now().Format("2006-01-02 15:04:05"))
+	for i := 0; i < nMap; i++ {
+		fileId, err := fs.OpenFile("/test/"+reduceName(jobName, i, reduceTaskNumber), &option.OpenFile{})
+		//file,err := os.Open(reduceName(jobName, i, reduceTaskNumber))
+		if err != nil {
+			fmt.Printf("reduce file:%s can't open\n",reduceName(jobName, i, reduceTaskNumber))
+		} else {
+			stream, err := fs.Read(fileId)
+			if err != nil {
+				log.Fatal("doReduce:read file from alluxio: ", err)
+			}
+			out, err := ioutil.ReadAll(stream)
+			ioBuff[i].Write(out)
+			enc := jsoniter.NewDecoder(&ioBuff[i])
+			for {
+				var kv KeyValue
+				err := enc.Decode(&kv)
+				if err != nil {
+					break  // 此时文件解码完毕
+				}
+				_, ok := keyValues[kv.Key]
+				if !ok { // 说明当前并没有这个key
+					keyValues[kv.Key] = make([]string, 0)
+				}
+				keyValues[kv.Key] = append(keyValues[kv.Key], kv.Value)
+			}
+			_, err = fs.Write(fileId, &ioBuff[i])
+			fs.Close(fileId)
+		}
+	}
+	var keys []string
+	for k, _ := range keyValues {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)  // 递增排序
+
+	fileId,err := fs.CreateFile("/test/"+mergeName(jobName, reduceTaskNumber), &option.CreateFile{})
+	if err != nil {
+		fmt.Printf("reduce merge file:%s can't open\n",mergeName(jobName, reduceTaskNumber))
+		return
+	}
+	var ioBuff1 bytes.Buffer
+	enc := jsoniter.NewEncoder(&ioBuff1)
+	fmt.Println("encode reduce result at ",time.Now().Format("2006-01-02 15:04:05"))
+	for _,k := range keys {
+		enc.Encode(KeyValue{k, reduceF(k,keyValues[k])})
+	}
+	_, err = fs.Write(fileId, &ioBuff1)
+	fs.Close(fileId)
+	fmt.Println("finish reduce at ",time.Now().Format("2006-01-02 15:04:05"))
 }
+
