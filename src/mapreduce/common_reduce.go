@@ -46,7 +46,7 @@ func doReduce(
 	fs := SetUpClient("10.2.152.24")
 	keyValues := make(map[string][]string)
 	ioBuff := make([]bytes.Buffer, nMap)
-	fmt.Println("decode and do reduce at ",time.Now().Format("2006-01-02 15:04:05"))
+	//fmt.Println("decode and do reduce at ",time.Now().Format("2006-01-02 15:04:05"))
 	for i := 0; i < nMap; i++ {
 		fileId, err := fs.OpenFile("/test/"+reduceName(jobName, i, reduceTaskNumber), &option.OpenFile{})
 		//file,err := os.Open(reduceName(jobName, i, reduceTaskNumber))
@@ -89,12 +89,12 @@ func doReduce(
 	}
 	var ioBuff1 bytes.Buffer
 	enc := jsoniter.NewEncoder(&ioBuff1)
-	fmt.Println("encode reduce result at ",time.Now().Format("2006-01-02 15:04:05"))
+	//fmt.Println("encode reduce result at ",time.Now().Format("2006-01-02 15:04:05"))
 	for _,k := range keys {
 		enc.Encode(KeyValue{k, reduceF(k,keyValues[k])})
 	}
 	_, err = fs.Write(fileId, &ioBuff1)
 	fs.Close(fileId)
-	fmt.Println("finish reduce at ",time.Now().Format("2006-01-02 15:04:05"))
+	//fmt.Println("finish reduce at ",time.Now().Format("2006-01-02 15:04:05"))
 }
 

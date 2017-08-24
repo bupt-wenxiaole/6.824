@@ -75,7 +75,7 @@ func doMap(
 	filesenc := make([]*jsoniter.Encoder,nReduce)
 	ioBuff := make([]bytes.Buffer, nReduce)
 	file := make([]int, nReduce)
-	fmt.Println("create map file at ",time.Now().Format("2006-01-02 15:04:05"))
+	//fmt.Println("create map file at ",time.Now().Format("2006-01-02 15:04:05"))
 	for i := range filesenc {
 		file[i], err = fs.CreateFile("/test/"+reduceName(jobName, mapTaskNumber, i), &option.CreateFile{})
 		if err != nil {
@@ -85,14 +85,14 @@ func doMap(
 			filesenc[i] = jsoniter.NewEncoder(&ioBuff[i])
 		}
 	}
-	fmt.Println("json-iterator encode at ",time.Now().Format("2006-01-02 15:04:05"))
+	//fmt.Println("json-iterator encode at ",time.Now().Format("2006-01-02 15:04:05"))
 	for _,v := range kv {
 		err := filesenc[ihash(v.Key) % uint32(nReduce)].Encode(&v)
 		if err != nil {
 			fmt.Printf("%s Encode Failed %v\n",v,err)
 		}
 	}
-	fmt.Println("write result to map file at ",time.Now().Format("2006-01-02 15:04:05"))
+	//fmt.Println("write result to map file at ",time.Now().Format("2006-01-02 15:04:05"))
 	for j:= 0;j < nReduce;j++ {
 		_, err = fs.Write(file[j], &ioBuff[j])
 		if err != nil {
