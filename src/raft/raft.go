@@ -19,10 +19,17 @@ package raft
 
 import "sync"
 import "labrpc"
+import "time"
 
 // import "bytes"
 // import "encoding/gob"
 
+const {
+	Stopped = "stopped"
+	Follower = "follower"
+	Candidate = "candidates"
+	Leader = "leader" 
+}
 
 
 //
@@ -62,12 +69,13 @@ type Raft struct {
 	state     string
 	currentTerm int
 	votedFor int
-	log  *Log
-	commitIndex int
+	routineGroup sync.WaitGroup
+	//log  *Log
+	//commitIndex int
 	lastApplied int
-    nextIndex   []int              //对于每一个服务器，
+    //nextIndex   []int              //对于每一个服务器，
     //需要发送给他的下一个日志条目的索引值（初始化为领导人最后索引值加一） 
-    matchIndex  []int              //对于每一个服务器，已经复制给他的日志的最高索引值      
+    //matchIndex  []int              //对于每一个服务器，已经复制给他的日志的最高索引值      
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
@@ -79,6 +87,11 @@ func (rf *Raft) State() string {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	return rf.state
+}
+func (rf *Raft) setState(s string) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	rf.state = s
 }
 // return currentTerm and whether this server
 // believes it is the leader.
@@ -254,7 +267,28 @@ func (rf *Raft) Kill() {
 // tester or service expects Raft to send ApplyMsg messages.
 // Make() must return quickly, so it should start goroutines
 // for any long-running work.
-//c
+func (rf *Raft) loop() {
+	defer DPrintf("server.loop.end\n")
+	state := rf.State()
+
+	for state != Stopped {
+		DPrintf("raft.loop.run %s\n", state)
+		switch state {
+		case Follower:
+			rf.followerLoop()
+		case Candidate:
+			rf.candidateLoop()
+		case Leader:
+			rf.leaderLoop()
+		}
+		state = rf.State()
+	}
+
+}
+func (rf *Raft) followerLoop() {
+	since := time.Now()
+	electionTimeout := 
+}
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
 	rf := &Raft{}
@@ -263,10 +297,15 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
 
 	// Your initialization code here (2A, 2B, 2C).
-
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
-
+	rf.setState("follower")
+	DPrintf("start one raft server\n")
+	rf.routineGroup.Add(1)
+	go func() {
+		defer rf.routineGroup.Done()
+		rf.loop()
+	}
 
 	return rf
 }
