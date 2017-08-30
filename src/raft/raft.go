@@ -30,7 +30,12 @@ const {
 	Candidate = "candidates"
 	Leader = "leader" 
 }
-
+const ElectionTimeoutThresholdPercent = 0.8
+type ev struct {
+	target interface{}
+	returnValue interface{}
+	c chan error
+}
 
 //
 // as each Raft peer becomes aware that successive log entries are
@@ -79,8 +84,7 @@ type Raft struct {
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
-
-
+	c  chan *ev
 }
 
 func (rf *Raft) State() string {
@@ -287,7 +291,23 @@ func (rf *Raft) loop() {
 }
 func (rf *Raft) followerLoop() {
 	since := time.Now()
-	electionTimeout := 
+	electionTimeout := RaftElectionTimeout
+	timeoutchan := afterBetween(electionTimeout, electionTimeout * 2)
+	for rf.State() == Follower {
+		var err error
+		select {
+		case e := <- rf.c:
+			switch req := e.target.(type) {
+			case *RequestVoteRequest:
+				elapsedTime := time.Now().Sub(since)
+				if elapsedTime > time.Duration(float64(RaftElectionTimeout)*ElectionTimeoutThresholdPercent) {
+					rf.DispatchEvent(newEvent(ElectionTimeoutThresholdEventType, elapsedTime, nil) )
+				}
+				e.returnValue, update = rf.processAppendEntriesRequest(req)	
+			}
+		}
+	}
+
 }
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
@@ -295,11 +315,12 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.peers = peers
 	rf.persister = persister
 	rf.me = me
+	rf.c = make(chan *ev, 256)
 
 	// Your initialization code here (2A, 2B, 2C).
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
-	rf.setState("follower")
+	rf.setState(Follower)
 	DPrintf("start one raft server\n")
 	rf.routineGroup.Add(1)
 	go func() {
