@@ -295,6 +295,7 @@ func (rf *Raft) followerLoop() {
 	timeoutchan := afterBetween(electionTimeout, electionTimeout * 2)
 	for rf.State() == Follower {
 		var err error
+		update := false
 		select {
 		case e := <- rf.c:
 			switch req := e.target.(type) {
@@ -303,9 +304,24 @@ func (rf *Raft) followerLoop() {
 				if elapsedTime > time.Duration(float64(RaftElectionTimeout)*ElectionTimeoutThresholdPercent) {
 					rf.DispatchEvent(newEvent(ElectionTimeoutThresholdEventType, elapsedTime, nil) )
 				}
-				e.returnValue, update = rf.processAppendEntriesRequest(req)	
+				e.returnValue, update = rf.processAppendEntriesRequest(req)
+			case *RequestVoteRequest:
+				e.returnValue, update = rf.processRequestVoteRequest(req)
+			default:
+				err = NotLeaderError
 			}
+			//call back to event
+			//this step will block
+			e.c <- err
+		case <- timeoutChan:
+			//todo: only allow synced follower to promote to candidate
+			s.setState(Candidate)
 		}
+		if update {
+			since = time.Now()
+			timeoutChan = 
+		}
+
 	}
 
 }
