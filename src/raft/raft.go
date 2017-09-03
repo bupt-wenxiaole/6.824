@@ -87,6 +87,7 @@ type Raft struct {
 	c  chan *ev
 }
 
+
 func (rf *Raft) State() string {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -175,6 +176,15 @@ type RequestVoteReply struct {
 	VoteForCandidate bool
 }
 
+type AppendEntriesRequest struct {
+	Term int
+	Leader int 
+}
+
+type AppendEntriesReply struct {
+	Term int
+	Success bool
+}
 func afterBetween(min time.Duration, max time.Duration) <-chan time.Time {
 	rand := rand.New(rand.NewSource(time.Now().UnixNano()))
 	d, delta := min, (max - min)
@@ -220,6 +230,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 // the struct itself.
 //
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
+	//RPC的调用示例在这里
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	return ok
 }
@@ -289,6 +300,59 @@ func (rf *Raft) loop() {
 	}
 
 }
+
+func (rf *server) updateCurrentTerm(term int, leaderName int) {
+	_assert(term > s.currentTerm,
+		"upadteCurrentTerm: update is called when term is not larger than currentTerm")
+
+	// Store previous values temporarily.
+	prevTerm := rf.currentTerm
+	prevLeader := rf.leader
+
+	// set currentTerm = T, convert to follower (§5.1)
+	// stop heartbeats before step-down
+	if rf.state == Leader {
+		for _, peer := range rf.peers {
+			peer.stopHeartbeat(false)
+		}
+	}
+	// update the term and clear vote for
+	if s.state != Follower {
+		s.setState(Follower)
+	}
+
+	rf.mu.Lock()
+	rf.currentTerm = term
+	rf.leader = leaderName
+	// -1 means no voteFor
+	rf.votedFor = -1
+	rf.mu.Unlock()
+}
+
+func (rf *Raft) processAppendEntriesRequest (req *AppendEntriesReply) (*AppendEntriesReply, bool) {
+	//part 2A do not involve the log, only for heartbeat
+	DPrintf("server.ae.process")
+	if req.Term < rf.currentTerm {
+		DPrintf("server.ae.error: stale term")
+		return newAppendEntriesResponse(rf.currentTerm), false
+	}
+	if req.Term == rf.currentTerm {
+		_assert(s.State() != Leader, "leader.elected.at.same.term.%d\n", s.currentTerm)
+		// step-down to follower when it is a candidate
+		if rf.state == Candidate {
+			// change state to follower
+			rf.setState(Follower)
+		}
+		// discover new leader when candidate
+		// save leader name when follower
+		rf.leader = req.LeaderName
+	} else {
+		// Update term and leader.
+		rf.updateCurrentTerm(req.Term, req.LeaderName)
+	}
+
+
+}
 func (rf *Raft) followerLoop() {
 	since := time.Now()
 	electionTimeout := RaftElectionTimeout
@@ -319,7 +383,7 @@ func (rf *Raft) followerLoop() {
 		}
 		if update {
 			since = time.Now()
-			timeoutChan = 
+			timeoutChan = afterBetween(electionTimeout, electionTimeout * 2)
 		}
 
 	}
