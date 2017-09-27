@@ -20,6 +20,7 @@ package raft
 import "sync"
 import "labrpc"
 import "time"
+import "errors"
 
 // import "bytes"
 // import "encoding/gob"
@@ -30,11 +31,42 @@ const {
 	Candidate = "candidates"
 	Leader = "leader" 
 }
+
 const ElectionTimeoutThresholdPercent = 0.8
+var StopError = errors.New("raft: Has been stopped")
+
 type ev struct {
 	target interface{}
 	returnValue interface{}
 	c chan error
+}
+// Sends an event to the event loop to be processed. The function will wait
+// until the event is actually processed before returning.
+// Send 函数将RPC送来的请求放到eventloop的chan里，等到eventloop处理完之后返回
+// 类似 go-raft实现中通过http post传过来的请求参数经过send函数交给eventloop处理
+func (rf *raft) Running() bool {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return s.state != Stopped
+}
+
+func (rf *raft) send(value interface{}) (interface{}, error) {
+	if !s.Running() {
+		return nil, StopError
+	}
+
+	event := &ev{target: value, c: make(chan error, 1)}
+	select {
+	case s.c <- event:
+	case <-s.stopped:
+		return nil, StopError
+	}
+	select {
+	case <-s.stopped:
+		return nil, StopError
+	case err := <-event.c:
+		return event.returnValue, err
+	}
 }
 
 //
@@ -85,6 +117,7 @@ type Raft struct {
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
 	c  chan *ev
+	stopped chan bool
 }
 
 
@@ -118,7 +151,11 @@ func (rf *Raft) GetState() (int, bool) {
 
 	return term, isleader
 }
-
+func (rf *Raft) Term() int {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return rf.currentTerm
+}
 //
 // save Raft's persistent state to stable storage,
 // where it can later be retrieved after a crash and restart.
@@ -173,7 +210,14 @@ type RequestVoteArgs struct {
 // field names must start with capital letters!
 //
 type RequestVoteReply struct {
+	Term int
 	VoteForCandidate bool
+}
+func newRequestVoteReply(term int, voteForCandidate bool) *RequestVoteReply {
+	return &RequestVoteReply {
+		Term: term
+		VoteForCandidate: voteForCandidate
+	}
 }
 
 type AppendEntriesRequest struct {
@@ -195,9 +239,15 @@ func afterBetween(min time.Duration, max time.Duration) <-chan time.Time {
 }
 //
 // example RequestVote RPC handler.
-//
+// 这里的RequestVote类似go-raft中的http handler，收到请求后发送到chan里后等待处理结束
+func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
+	//RPC的调用示例在这里
+	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
+	return ok
+}
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	
+	ret, _ := rf.send(args)
+	reply := ret.(*RequestVoteReply)
 }
 
 //
@@ -229,12 +279,30 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 // that the caller passes the address of the reply struct with &, not
 // the struct itself.
 //
-func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
-	//RPC的调用示例在这里
-	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
-	return ok
-}
 
+func (rf *Raft) processRequestVoteRequest(req *RequestVoteArgs) (*RequestVoteReply, bool) {
+	// If the request is coming from an old term then reject it.
+	if req.Term < rf.Term() {
+		DPrintf("server.rv.deny.vote: cause stale term")
+		return newRequestVoteReply(rf.currentTerm, false), false
+		//这两个false的意思是既不给该candidate进行投票，该请求也不能作为一个心跳来维持该follower的在线状态
+	}
+	// If the term of the request peer is larger than this node, update the term
+	// If the term is equal and we've already voted for a different candidate then
+	// don't vote for this candidate.
+	if req.Term > rf.Term() {
+		rf.updateCurrentTerm(req.Term, -1)
+	} else if rf.votedFor != -1 && rf.votedFor != req.CandidatedId {
+		DPrintf("server.deny.vote: cause duplicate vote: ", req.CandidatedId, 
+			" already vote for", rf.votedFor)
+		return newRequestVoteReply(rf.currentTerm, false), false
+	}
+	//在test 2A中暂时不考率log的index问题（和log耦合的部分），raft设计的思路依旧遵照软件工程的高内聚，低耦合
+	//此时已经可以给该candidate进行投票了
+	DPrintf("server.rv.vote: ", rf.name, "votes for", req.CandidatedId, "at term", req.Term)
+	rf.votedFor = req.CandidatedId
+	return newRequestVoteReply(s.currentTerm, true), true
+}
 
 //
 // the service using Raft (e.g. a k/v server) wants to start
@@ -363,7 +431,7 @@ func (rf *Raft) followerLoop() {
 		select {
 		case e := <- rf.c:
 			switch req := e.target.(type) {
-			case *RequestVoteRequest:
+			case *AppendEntriesRequest:
 				elapsedTime := time.Now().Sub(since)
 				if elapsedTime > time.Duration(float64(RaftElectionTimeout)*ElectionTimeoutThresholdPercent) {
 					rf.DispatchEvent(newEvent(ElectionTimeoutThresholdEventType, elapsedTime, nil) )
