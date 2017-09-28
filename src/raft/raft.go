@@ -97,6 +97,17 @@ type Log struct {
 //
 // A Go object implementing a single Raft peer.
 //
+//原始代码中的peer只是labrpc.ClientEnd，不便于进行封装，在这里重新进行封装
+type Peer struct {
+	raft *Raft
+	PeerID int
+	ConnectClient *labrpc.ClienEnd
+	prevLogIndex int
+	stopChan chan bool
+	heartbeatInterval time.Duration
+	lastActivity time.Time
+}
+func newPeer(raft *raft, peerid int,)
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
@@ -419,7 +430,9 @@ func (rf *Raft) processAppendEntriesRequest (req *AppendEntriesReply) (*AppendEn
 		rf.updateCurrentTerm(req.Term, req.LeaderName)
 	}
 
-
+}
+func (rf *Raft) leaderLoop() {
+	for 
 }
 func (rf *Raft) followerLoop() {
 	since := time.Now()

@@ -124,8 +124,6 @@ func (cfg *config) start1(i int) {
 	for j := 0; j < cfg.n; j++ {
 		cfg.endnames[i][j] = randstring(20)
 	}
-
-	// a fresh set of ClientEnds.
 	ends := make([]*labrpc.ClientEnd, cfg.n)
 	for j := 0; j < cfg.n; j++ {
 		ends[j] = cfg.net.MakeEnd(cfg.endnames[i][j])
@@ -181,7 +179,7 @@ func (cfg *config) start1(i int) {
 			}
 		}
 	}()
-
+	//在这里加上makePEER
 	rf := Make(ends, i, cfg.saved[i], applyCh)
 
 	cfg.mu.Lock()

@@ -94,9 +94,9 @@ func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}) bo
 	req.args = qb.Bytes()
 
 	e.ch <- req 
+	//clientend的ch是网络ch的拷贝，有一个的线程单独从ch里读出所有的请求进行处理
 
 	rep := <-req.replyCh   //从请求rep的replych中读取rep
-	//在哪里向replych中写入rep
 	if rep.ok {
 		rb := bytes.NewBuffer(rep.reply)
 		rd := gob.NewDecoder(rb)
