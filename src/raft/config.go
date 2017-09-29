@@ -126,6 +126,8 @@ func (cfg *config) start1(i int) {
 	}
 	ends := make([]*labrpc.ClientEnd, cfg.n)
 	for j := 0; j < cfg.n; j++ {
+		//通过这个string 来标记建立的这段链接
+		//注意raft server是有ID的，通过start1传进来，peer直接用endname进行标记
 		ends[j] = cfg.net.MakeEnd(cfg.endnames[i][j])
 		cfg.net.Connect(cfg.endnames[i][j], j)
 	}
@@ -179,7 +181,6 @@ func (cfg *config) start1(i int) {
 			}
 		}
 	}()
-	//在这里加上makePEER
 	rf := Make(ends, i, cfg.saved[i], applyCh)
 
 	cfg.mu.Lock()

@@ -100,24 +100,76 @@ type Log struct {
 //原始代码中的peer只是labrpc.ClientEnd，不便于进行封装，在这里重新进行封装
 type Peer struct {
 	raft *Raft
-	PeerID int
 	ConnectClient *labrpc.ClienEnd
-	prevLogIndex int
+	//prevLogIndex int   
+	//后面在实现log replication的时候加入
 	stopChan chan bool
 	heartbeatInterval time.Duration
 	lastActivity time.Time
+	sync.Mutex
 }
-func newPeer(raft *raft, peerid int,)
+func newPeer(raft *raft, peerid int, connectclient *labrpc.ClienEnd, heartbeatInterval time.Duration) *Peer{
+	return &Peer{
+		raft:            raft,
+		ConnectClient:   connectclient,
+		heartbeatInterval: heartbeatInterval,
+	}
+}
+//starts the peer heartbeat
+func (p *Peer) startHeartbeat() {
+	p.stopChan = make(chan bool)
+	c := make(chan bool)
+	p.setLastActivity(time.Now())
+	p.raft.routineGroup.Add(1)
+	go func() {
+		defer p.raft.routineGroup.Done()
+		p.heartbeat(c)
+	}()
+	<-c
+}
+func (p *Peer) heartbeat(c chan bool) {
+	stopChan := p.stopChan
+	c <- true
+	ticker := time.Tick(p.heartbeatInterval)
+	DPrintf("peer.heartbeat: ", p.ConnectClient.endname, p.heartbeatInterval)
+	for {
+		select {
+		case flush := <-stopChan:
+			if flush {
+				// before we can safely remove a node
+				// we must flush the remove command to the node first
+				p.flush()
+				debugln("peer.heartbeat.stop.with.flush: ", p.Name)
+				return
+			} else {
+				debugln("peer.heartbeat.stop: ", p.Name)
+				return
+			}
+		case <-ticker:
+			start := time.Now()
+			p.flush()
+			
+		}
+	}	
+}
+func (p *Peer) flush() {
+	DPrintf("peer.heartbeat.flush: ", p.ConnectClient.endname)
+	term := p.raft.currentTerm
+	//
+	p.sendAppendEntriesRequest(AppendEntriesRequest(term))
+}
+
+
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
-	peers     []*labrpc.ClientEnd // RPC end points of all peers
+	peers     []*Peer // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
 	me        int                 // this peer's index into peers[]
 	leader    int                 // this peer's leader
 	state     string
 	currentTerm int
 	votedFor int
-	routineGroup sync.WaitGroup
+	routineGroup sync.WaitGroup  //raft需要去等着他开出去的goroutine工作结束
 	//log  *Log
 	//commitIndex int
 	lastApplied int
@@ -473,7 +525,11 @@ func (rf *Raft) followerLoop() {
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
 	rf := &Raft{}
-	rf.peers = peers
+	Peers := make([]*Peer)
+	for _, clientend := range peers {
+		Peers = append(Peers, newPeer(rf, clientend, DefaultHeartbeatInterval))
+	}
+	rf.Peers = Peers
 	rf.persister = persister
 	rf.me = me
 	rf.c = make(chan *ev, 256)
