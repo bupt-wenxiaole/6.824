@@ -303,16 +303,25 @@ func afterBetween(min time.Duration, max time.Duration) <-chan time.Time {
 //
 // example RequestVote RPC handler.
 // 这里的RequestVote类似go-raft中的http handler，收到请求后发送到chan里后等待处理结束
+// outgoing call
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	//RPC的调用示例在这里
-	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
+	ok := rf.peers[server].ConnectClient.Call("Raft.RequestVote", args, reply)
 	return ok
-}
+} 
+// ingoing call
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	ret, _ := rf.send(args)
 	reply := ret.(*RequestVoteReply)
 }
-
+func (rf *Raft) sendAppendEntriesRequest(server int, args *RequestAppendEntriesArgs, reply *RequestAppendEntriesReply) bool {
+	ok := rf.peers[server].ConnectClient.Call("Raft.RequestAppendEntries", args, reply)
+	return ok
+}
+func (rf *Raft) AppendEntriesRequest(args *RequestVoteArgs, reply *RequestVoteReply) {
+	ret, _ := rf.send(args)
+	reply := ret.(*RequestVoteReply)
+}
 //
 // example code to send a RequestVote RPC to a server.
 // server is the index of the target server in rf.peers[].
