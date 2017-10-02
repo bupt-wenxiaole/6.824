@@ -51,18 +51,18 @@ func (rf *raft) Running() bool {
 }
 
 func (rf *raft) send(value interface{}) (interface{}, error) {
-	if !s.Running() {
+	if !rf.Running() {
 		return nil, StopError
 	}
 
 	event := &ev{target: value, c: make(chan error, 1)}
 	select {
-	case s.c <- event:
+	case rf.c <- event:
 	case <-s.stopped:
 		return nil, StopError
 	}
 	select {
-	case <-s.stopped:
+	case <-rf.stopped:
 		return nil, StopError
 	case err := <-event.c:
 		return event.returnValue, err
@@ -101,6 +101,7 @@ type Log struct {
 type Peer struct {
 	raft *Raft
 	ConnectClient *labrpc.ClienEnd
+	ServerIndex int
 	//prevLogIndex int   
 	//后面在实现log replication的时候加入
 	stopChan chan bool
@@ -108,9 +109,10 @@ type Peer struct {
 	lastActivity time.Time
 	sync.Mutex
 }
-func newPeer(raft *raft, peerid int, connectclient *labrpc.ClienEnd, heartbeatInterval time.Duration) *Peer{
+func newPeer(raft *raft, server int, connectclient *labrpc.ClienEnd, heartbeatInterval time.Duration) *Peer{
 	return &Peer{
 		raft:            raft,
+		ServerIndex      server,
 		ConnectClient:   connectclient,
 		heartbeatInterval: heartbeatInterval,
 	}
@@ -152,11 +154,19 @@ func (p *Peer) heartbeat(c chan bool) {
 		}
 	}	
 }
+func (p *Peer) stopHeartbeat(flush bool) {
+	p.stopChan <- flush
+}
+
 func (p *Peer) flush() {
 	DPrintf("peer.heartbeat.flush: ", p.ConnectClient.endname)
 	term := p.raft.currentTerm
-	//
-	p.sendAppendEntriesRequest(AppendEntriesRequest(term))
+	leader := p.raft.leader
+	//this two propertities need get() and set()
+	//server int, args *RequestAppendEntriesArgs, reply *RequestAppendEntriesReply
+	args := newAppendEntriesRequest(term, leader)
+	var reply *RequestAppendEntriesReply = &RequestAppendEntriesReply{}
+	p.sendAppendEntriesRequest(p.ServerIndex, newAppendEntriesRequest(term, leader), reply)
 }
 
 
@@ -288,6 +298,13 @@ type AppendEntriesRequest struct {
 	Leader int 
 }
 
+func newAppendEntriesRequest (term int, leader int) *AppendEntriesRequest {
+	return &AppendEntriesRequest{
+		Term : term
+		Leader : leader
+	}
+}
+
 type AppendEntriesReply struct {
 	Term int
 	Success bool
@@ -306,22 +323,23 @@ func afterBetween(min time.Duration, max time.Duration) <-chan time.Time {
 // outgoing call
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	//RPC的调用示例在这里
-	ok := rf.peers[server].ConnectClient.Call("Raft.RequestVote", args, reply)
+	ok := rf.Peers[server].ConnectClient.Call("Raft.RequestVoteHandler", args, reply)
 	return ok
 } 
 // ingoing call
-func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+func (rf *Raft) RequestVoteHandler(args *RequestVoteArgs, reply *RequestVoteReply) {
 	ret, _ := rf.send(args)
 	reply := ret.(*RequestVoteReply)
 }
 func (rf *Raft) sendAppendEntriesRequest(server int, args *RequestAppendEntriesArgs, reply *RequestAppendEntriesReply) bool {
-	ok := rf.peers[server].ConnectClient.Call("Raft.RequestAppendEntries", args, reply)
+	ok := rf.Peers[server].ConnectClient.Call("Raft.RequestAppendEntriesHandler", args, reply)
 	return ok
 }
-func (rf *Raft) AppendEntriesRequest(args *RequestVoteArgs, reply *RequestVoteReply) {
+func (rf *Raft) AppendEntriesRequestHandler(args *RequestVoteArgs, reply *RequestVoteReply) {
 	ret, _ := rf.send(args)
 	reply := ret.(*RequestVoteReply)
 }
+
 //
 // example code to send a RequestVote RPC to a server.
 // server is the index of the target server in rf.peers[].
@@ -493,7 +511,14 @@ func (rf *Raft) processAppendEntriesRequest (req *AppendEntriesReply) (*AppendEn
 
 }
 func (rf *Raft) leaderLoop() {
-	for 
+	for _, peer := range s.Peers {
+		peer.startHeartbeat()
+	}
+	// Begin to collect response from followers
+	for rf.State() == Leader {
+		
+	}
+
 }
 func (rf *Raft) followerLoop() {
 	since := time.Now()
@@ -535,8 +560,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
 	rf := &Raft{}
 	Peers := make([]*Peer)
-	for _, clientend := range peers {
-		Peers = append(Peers, newPeer(rf, clientend, DefaultHeartbeatInterval))
+	for index, clientend := range peers {
+		Peers = append(Peers, newPeer(rf, index, clientend, DefaultHeartbeatInterval))
 	}
 	rf.Peers = Peers
 	rf.persister = persister
