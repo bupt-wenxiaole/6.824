@@ -1,5 +1,6 @@
 package raft
-
+//TODO: sendappendentries(flush)得进行补充，函数有重名，注意raft.go中的框架随意改动，只要能通过labrpc和仿真network的即可
+//TODO: processappendentriesreply需要进行补充，一个是server,一个是peer
 //
 // this is an outline of the API that raft must expose to
 // the service (or tester). see comments below for
@@ -309,6 +310,13 @@ type AppendEntriesReply struct {
 	Term int
 	Success bool
 }
+func newAppendEntriesReply (term int, success bool) *AppendEntriesReply {
+	return &AppendEntriesReply{
+		Term : term
+		Success : success
+	}
+}
+
 func afterBetween(min time.Duration, max time.Duration) <-chan time.Time {
 	rand := rand.New(rand.NewSource(time.Now().UnixNano()))
 	d, delta := min, (max - min)
@@ -492,7 +500,7 @@ func (rf *Raft) processAppendEntriesRequest (req *AppendEntriesReply) (*AppendEn
 	DPrintf("server.ae.process")
 	if req.Term < rf.currentTerm {
 		DPrintf("server.ae.error: stale term")
-		return newAppendEntriesResponse(rf.currentTerm), false
+		return newAppendEntriesReply(rf.currentTerm, false), false
 	}
 	if req.Term == rf.currentTerm {
 		_assert(s.State() != Leader, "leader.elected.at.same.term.%d\n", s.currentTerm)
@@ -508,6 +516,8 @@ func (rf *Raft) processAppendEntriesRequest (req *AppendEntriesReply) (*AppendEn
 		// Update term and leader.
 		rf.updateCurrentTerm(req.Term, req.LeaderName)
 	}
+	//igonore the log replication, so the replication is always true
+	return newAppendEntriesReply(rf.currentTerm, true), true
 
 }
 func (rf *Raft) leaderLoop() {
@@ -516,7 +526,32 @@ func (rf *Raft) leaderLoop() {
 	}
 	// Begin to collect response from followers
 	for rf.State() == Leader {
-		
+		var err error
+		select {
+		case <-s.stopped:
+			// Stop all peers before stop
+			for _, peer := range s.peers {
+				peer.stopHeartbeat(false)
+			}
+			rf.setState(Stopped)
+			return
+
+		case e := <-rf.c:
+			switch req := e.target.(type) {
+			case *AppendEntriesRequest:
+				e.returnValue, _ = rf.processAppendEntriesRequest(req)
+			case *AppendEntriesResponse:
+				rf.processAppendEntriesResponse(req)
+			case *RequestVoteRequest:
+				e.returnValue, _ = rf.processRequestVoteRequest(req)
+			}
+			// Callback to event.
+			e.c <- err
+		}
+	}
+	//TODO:
+	//syncedPeer用来统计有多少peer已经apply了这条日志来确定这条日志是否commit
+	//rf.syncedPeer = nil
 	}
 
 }
