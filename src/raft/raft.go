@@ -1,6 +1,4 @@
 package raft
-//TODO: sendappendentries(flush)得进行补充，函数有重名，注意raft.go中的框架随意改动，只要能通过labrpc和仿真network的即可
-//TODO: processappendentriesreply需要进行补充，一个是server,一个是peer
 //
 // this is an outline of the API that raft must expose to
 // the service (or tester). see comments below for
@@ -69,7 +67,31 @@ func (rf *raft) send(value interface{}) (interface{}, error) {
 		return event.returnValue, err
 	}
 }
+//***********注意同步send与异步send的区别*********
+func (rf *raft) sendAsync(value interface{}) {
+	if !rf.Running() {
+		return
+	}
+	event := &ev{target: value, c: make(chan error, 1)}
+	// try a non-blocking send first
+	// in most cases, this should not be blocking
+	// avoid create unnecessary go routines
+	select {
+	case rf.c <- event:
+		return
+	default:
+	}
 
+	rf.routineGroup.Add(1)
+	go func() {
+		defer rf.routineGroup.Done()
+		select {
+		case rf.c <- event:
+		case <-rf.stopped:
+		}
+	}()
+
+}
 //
 // as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
@@ -167,9 +189,13 @@ func (p *Peer) flush() {
 	//server int, args *RequestAppendEntriesArgs, reply *RequestAppendEntriesReply
 	args := newAppendEntriesRequest(term, leader)
 	var reply *RequestAppendEntriesReply = &RequestAppendEntriesReply{}
-	p.sendAppendEntriesRequest(p.ServerIndex, newAppendEntriesRequest(term, leader), reply)
+	p.sendAppendEntriesRequest(newAppendEntriesRequest(term, leader), reply)
 }
-
+func (p *Peer) setLastActivity(now time.Time) {
+	p.Lock()
+	defer p.Unlock()
+	p.lastActivity = now
+}
 
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
@@ -309,6 +335,10 @@ func newAppendEntriesRequest (term int, leader int) *AppendEntriesRequest {
 type AppendEntriesReply struct {
 	Term int
 	Success bool
+//--------------------分割线上下两部分：上部分是对面的server传回来的结果
+// 下部分是根据传回来的结果进行append
+	Peer int
+	//append bool
 }
 func newAppendEntriesReply (term int, success bool) *AppendEntriesReply {
 	return &AppendEntriesReply{
@@ -329,20 +359,48 @@ func afterBetween(min time.Duration, max time.Duration) <-chan time.Time {
 // example RequestVote RPC handler.
 // 这里的RequestVote类似go-raft中的http handler，收到请求后发送到chan里后等待处理结束
 // outgoing call
-func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
+func (p *Peer) sendRequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	//RPC的调用示例在这里
-	ok := rf.Peers[server].ConnectClient.Call("Raft.RequestVoteHandler", args, reply)
-	return ok
+	ok := p.ConnectClient.Call("Raft.RequestVoteHandler", args, reply)
+	//TODO:对OK的返回值进行处理
 } 
 // ingoing call
 func (rf *Raft) RequestVoteHandler(args *RequestVoteArgs, reply *RequestVoteReply) {
 	ret, _ := rf.send(args)
 	reply := ret.(*RequestVoteReply)
 }
-func (rf *Raft) sendAppendEntriesRequest(server int, args *RequestAppendEntriesArgs, reply *RequestAppendEntriesReply) bool {
-	ok := rf.Peers[server].ConnectClient.Call("Raft.RequestAppendEntriesHandler", args, reply)
-	return ok
+//--------------------------------------
+// Append Entries
+//--------------------------------------
+//Sends an AppendEntries request to the peer through the config network call
+
+func (p *Peer) sendAppendEntriesRequest(args *RequestAppendEntriesArgs, reply *RequestAppendEntriesReply) {
+	ok := p.ConnectClient.Call("Raft.RequestAppendEntriesHandler", args, reply)
+	if ok == false {
+		DPrintf("peer.append.fail", p.server.me, "->", p.ServerIndex)
+		return
+	}
+	DPrintf("peer.append.resp",  p.server.me, "->", p.ServerIndex)
+	p.setLastActivity(time.Now())
+	p.Lock()
+	if reply.success {
+		DPrintf("peer.append.resp.success",  p.ServerIndex)
+	} else {
+		if reply.term > p.server.Term {
+			DPrintf("peer.append.resp.not.update: new leader.found")
+
+		}
+		//else if 
+		//else 
+		//以上这两种情况是log replication被拒绝的情况，之后在其他测试用例再补充
+	}
+	p.Unlock()
+	//Attach the peer to reply, thus server can know where it comes from
+	reply.peer = p.ServerIndex
+	//send responses to server for processing
+	p.server.sendAsync(reply)
 }
+
 func (rf *Raft) AppendEntriesRequestHandler(args *RequestVoteArgs, reply *RequestVoteReply) {
 	ret, _ := rf.send(args)
 	reply := ret.(*RequestVoteReply)
@@ -495,7 +553,7 @@ func (rf *server) updateCurrentTerm(term int, leaderName int) {
 	rf.mu.Unlock()
 }
 
-func (rf *Raft) processAppendEntriesRequest (req *AppendEntriesReply) (*AppendEntriesReply, bool) {
+func (rf *Raft) processAppendEntriesRequest(req *AppendEntriesReply) (*AppendEntriesReply, bool) {
 	//part 2A do not involve the log, only for heartbeat
 	DPrintf("server.ae.process")
 	if req.Term < rf.currentTerm {
@@ -535,7 +593,6 @@ func (rf *Raft) leaderLoop() {
 			}
 			rf.setState(Stopped)
 			return
-
 		case e := <-rf.c:
 			switch req := e.target.(type) {
 			case *AppendEntriesRequest:
