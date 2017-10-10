@@ -135,7 +135,7 @@ type Peer struct {
 func newPeer(raft *raft, server int, connectclient *labrpc.ClienEnd, heartbeatInterval time.Duration) *Peer{
 	return &Peer{
 		raft:            raft,
-		ServerIndex      server,
+		ServerIndex :     server,
 		ConnectClient:   connectclient,
 		heartbeatInterval: heartbeatInterval,
 	}
@@ -155,8 +155,8 @@ func (p *Peer) startHeartbeat() {
 func (p *Peer) heartbeat(c chan bool) {
 	stopChan := p.stopChan
 	c <- true
-	ticker := time.Tick(p.heartbeatInterval)
-	DPrintf("peer.heartbeat: ", p.ConnectClient.endname, p.heartbeatInterval)
+	ticker := time.Tick(HeartbeatInterval)
+	DPrintf("peer.heartbeat: ", p.ConnectClient.endname, HeartbeatInterval)
 	for {
 		select {
 		case flush := <-stopChan:
@@ -196,7 +196,6 @@ func (p *Peer) setLastActivity(now time.Time) {
 	defer p.Unlock()
 	p.lastActivity = now
 }
-
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
 	peers     []*Peer // RPC end points of all peers
@@ -294,16 +293,20 @@ func (rf *Raft) readPersist(data []byte) {
 // example RequestVote RPC arguments structure.
 // field names must start with capital letters!
 //
-type RequestVoteArgs struct {
+type RequestVoteRequest struct {
 	// Your data here (2A, 2B).
 	Term int 
 	CandidatedId int
-	LastLogIndex int
-	LastLogTerm int
-	Term int
-	VoteGrantedtrue bool
+	//LastLogIndex int
+	//LastLogTerm int
 
 }
+func newRequestVoteRequest(term int, candidatedid int) *RequestVoteRequest {
+	return &RequestVoteRequest{
+		Term : term,
+		CandidatedId : candidatedid
+	}
+} 
 
 //
 // example RequestVote RPC reply structure.
@@ -311,7 +314,7 @@ type RequestVoteArgs struct {
 //
 type RequestVoteReply struct {
 	Term int
-	VoteForCandidate bool
+	votesGranted bool
 }
 func newRequestVoteReply(term int, voteForCandidate bool) *RequestVoteReply {
 	return &RequestVoteReply {
@@ -369,6 +372,13 @@ func (rf *Raft) RequestVoteHandler(args *RequestVoteArgs, reply *RequestVoteRepl
 	ret, _ := rf.send(args)
 	reply := ret.(*RequestVoteReply)
 }
+//send VoteRequest Request
+func (p *Peer) sendVoteRequest(req *RequestVoteRequest, c chan*RequestVoteReply) {
+	DPrintf("peer.vote: ", p.server.Name(), "->", p.Name)
+	if ok := p.ConnectClient.Call("Raft.RequestVoteRequest")
+	
+}
+
 //--------------------------------------
 // Append Entries
 //--------------------------------------
@@ -459,7 +469,18 @@ func (rf *Raft) processRequestVoteRequest(req *RequestVoteArgs) (*RequestVoteRep
 	rf.votedFor = req.CandidatedId
 	return newRequestVoteReply(s.currentTerm, true), true
 }
+func (rf *Raft) processAppendEntriesReply(rep *AppendEntriesReply) {
+	// if we find a higher term then change to a follwer and exit.
+	if rep.Term > rf.Term() {
+		rf.updateCurrentTerm(rep.Term(), -1)
+		return
+	}
+	if !rep.Success {
+		return
+	}
+	//之后在log rep的部分要做的事情是根据ae的响应来确定哪条日志要被commit,
 
+}
 //
 // the service using Raft (e.g. a k/v server) wants to start
 // agreement on the next command to be appended to Raft's log. if this
@@ -524,6 +545,14 @@ func (rf *Raft) loop() {
 	}
 
 }
+func (rf *Raft) MemberCount() int {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return len(s.peers) + 1
+}
+func (rf *Raft) QuorumSize() int {
+	return (rf.MemberCount() / 2) + 1
+}
 
 func (rf *server) updateCurrentTerm(term int, leaderName int) {
 	_assert(term > s.currentTerm,
@@ -553,7 +582,7 @@ func (rf *server) updateCurrentTerm(term int, leaderName int) {
 	rf.mu.Unlock()
 }
 
-func (rf *Raft) processAppendEntriesRequest(req *AppendEntriesReply) (*AppendEntriesReply, bool) {
+func (rf *Raft) processAppendEntriesRequest(req *AppendEntriesRequest) (*AppendEntriesReply, bool) {
 	//part 2A do not involve the log, only for heartbeat
 	DPrintf("server.ae.process")
 	if req.Term < rf.currentTerm {
@@ -597,8 +626,8 @@ func (rf *Raft) leaderLoop() {
 			switch req := e.target.(type) {
 			case *AppendEntriesRequest:
 				e.returnValue, _ = rf.processAppendEntriesRequest(req)
-			case *AppendEntriesResponse:
-				rf.processAppendEntriesResponse(req)
+			case *AppendEntriesReply:
+				rf.processAppendEntriesReply(req)
 			case *RequestVoteRequest:
 				e.returnValue, _ = rf.processRequestVoteRequest(req)
 			}
@@ -612,6 +641,76 @@ func (rf *Raft) leaderLoop() {
 	}
 
 }
+// The event loop that is run when the server is in a Candidate state.
+func (rf *Raft) candidateLoop() {
+	preleader := rf.Leader
+	rf.Leader = -1 
+
+	doVote := true
+	//每隔一段时间向follower发送vote请求
+	votesGranted := 0
+	var timeoutChan <-chan time.Time
+	var respChan chan *RequestVoteReply
+	for rf.State() == Candidate {
+		if doVote {
+			// Increment current term, vote for self.
+			rf.currentTerm++
+			rf.votedFor = rf.me
+			// Send RequestVote RPCs to all other servers.
+			respChan = make(chan *RequestVoteReply, len(rf.peers))
+			for _, peer := range rf.peers {
+				rf.routineGroup.Add(1)
+				go func(peer *Peer) {
+					defer rf.routineGroup.Done()
+					peer.sendVoteRequest(newRequestVoteRequest(rf.currentTerm, rf.me), respChan)
+				}(peer)
+			}
+
+			// Wait for either:
+			//   * Votes received from majority of servers: become leader
+			//   * AppendEntries RPC received from new leader: step down.
+			//   * Election timeout elapses without election resolution: increment term, start new election
+			//   * Discover higher term: step down (§5.1)
+			votesGranted = 1
+			timeoutChan = afterBetween(ElectionTimeout, ElectionTimeout*2)
+			doVote = false
+		}
+		// If we received enough votes then stop waiting for more votes.
+		// And return from the candidate loop
+		if votesGranted == rf.QuorumSize() {
+			DPrintf("server.candidate.recv.enough.votes")
+			rf.setState(Leader)
+			return
+		}
+
+		// Collect votes from peers.
+		select {
+		case <-rf.stopped:
+			rf.setState(Stopped)
+			return
+
+		case resp := <-respChan:
+			if success := rf.processVoteResponse(resp); success {
+				DPrintf("server.candidate.vote.granted: ", votesGranted)
+				votesGranted++
+			}
+
+		case e := <-s.c:
+			var err error
+			switch req := e.target.(type) {
+			case *AppendEntriesRequest:
+				e.returnValue, _ = rf.processAppendEntriesRequest(req)
+			case *RequestVoteRequest:
+				e.returnValue, _ = rf.processRequestVoteRequest(req)
+			}
+			// Callback to event.
+			e.c <- err
+
+		case <-timeoutChan:
+			doVote = true
+		}
+	}
+}
 func (rf *Raft) followerLoop() {
 	since := time.Now()
 	electionTimeout := RaftElectionTimeout
@@ -624,9 +723,9 @@ func (rf *Raft) followerLoop() {
 			switch req := e.target.(type) {
 			case *AppendEntriesRequest:
 				elapsedTime := time.Now().Sub(since)
-				if elapsedTime > time.Duration(float64(RaftElectionTimeout)*ElectionTimeoutThresholdPercent) {
-					rf.DispatchEvent(newEvent(ElectionTimeoutThresholdEventType, elapsedTime, nil) )
-				}
+				//if elapsedTime > time.Duration(float64(RaftElectionTimeout)*ElectionTimeoutThresholdPercent) {
+				//	rf.DispatchEvent(newEvent(ElectionTimeoutThresholdEventType, elapsedTime, nil) )
+				//}
 				e.returnValue, update = rf.processAppendEntriesRequest(req)
 			case *RequestVoteRequest:
 				e.returnValue, update = rf.processRequestVoteRequest(req)
@@ -638,11 +737,11 @@ func (rf *Raft) followerLoop() {
 			e.c <- err
 		case <- timeoutChan:
 			//todo: only allow synced follower to promote to candidate
-			s.setState(Candidate)
+			rf.setState(Candidate)
 		}
 		if update {
 			since = time.Now()
-			timeoutChan = afterBetween(electionTimeout, electionTimeout * 2)
+			timeoutChan = afterBetween(ElectionTimeout, ElectionTimeout * 2)
 		}
 
 	}

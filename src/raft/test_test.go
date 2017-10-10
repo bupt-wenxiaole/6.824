@@ -17,8 +17,9 @@ import "sync"
 
 // The tester generously allows solutions to complete elections in one second
 // (much more than the paper's range of timeouts).
-const RaftElectionTimeout = 1000 * time.Millisecond
+//const RaftElectionTimeout = 1000 * time.Millisecond
 const ElectionTimeout = 300 * time.Millisecond
+const HeartbeatInterval = 50 * time.Millisecond
 
 func TestInitialElection2A(t *testing.T) {
 	servers := 3
