@@ -1,4 +1,5 @@
 package raft
+
 //
 // this is an outline of the API that raft must expose to
 // the service (or tester). see comments below for
@@ -20,36 +21,63 @@ import "sync"
 import "labrpc"
 import "time"
 import "errors"
+import "math/rand"
 
 // import "bytes"
 // import "encoding/gob"
 
-const {
-	Stopped = "stopped"
-	Follower = "follower"
+const (
+	Stopped   = "stopped"
+	Follower  = "follower"
 	Candidate = "candidates"
-	Leader = "leader" 
-}
+	Leader    = "leader"
+)
 
 const ElectionTimeoutThresholdPercent = 0.8
+
 var StopError = errors.New("raft: Has been stopped")
 
 type ev struct {
-	target interface{}
+	target      interface{}
 	returnValue interface{}
-	c chan error
+	c           chan error
 }
+
+type Raft struct {
+	mu           sync.Mutex // Lock to protect shared access to this peer's state
+	peers        []*Peer    // RPC end points of all peers
+	persister    *Persister // Object to hold this peer's persisted state
+	me           int        // this peer's index into peers[]
+	leader       int        // this peer's leader
+	state        string
+	currentTerm  int
+	votedFor     int
+	routineGroup sync.WaitGroup //raft需要去等着他开出去的goroutine工作结束
+	//log  *Log
+	//commitIndex int
+	lastApplied int
+	//nextIndex   []int              //对于每一个服务器，
+	//需要发送给他的下一个日志条目的索引值（初始化为领导人最后索引值加一）
+	//matchIndex  []int              //对于每一个服务器，已经复制给他的日志的最高索引值
+	// Your data here (2A, 2B, 2C).
+	// Look at the paper's Figure 2 for a description of what
+	// state a Raft server must maintain.
+	c       chan *ev
+	stopped chan bool
+}
+
 // Sends an event to the event loop to be processed. The function will wait
 // until the event is actually processed before returning.
 // Send 函数将RPC送来的请求放到eventloop的chan里，等到eventloop处理完之后返回
 // 类似 go-raft实现中通过http post传过来的请求参数经过send函数交给eventloop处理
-func (rf *raft) Running() bool {
+
+func (rf *Raft) Running() bool {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	return s.state != Stopped
+	return rf.state != Stopped
 }
 
-func (rf *raft) send(value interface{}) (interface{}, error) {
+func (rf *Raft) send(value interface{}) (interface{}, error) {
 	if !rf.Running() {
 		return nil, StopError
 	}
@@ -57,7 +85,7 @@ func (rf *raft) send(value interface{}) (interface{}, error) {
 	event := &ev{target: value, c: make(chan error, 1)}
 	select {
 	case rf.c <- event:
-	case <-s.stopped:
+	case <-rf.stopped:
 		return nil, StopError
 	}
 	select {
@@ -67,8 +95,9 @@ func (rf *raft) send(value interface{}) (interface{}, error) {
 		return event.returnValue, err
 	}
 }
+
 //***********注意同步send与异步send的区别*********
-func (rf *raft) sendAsync(value interface{}) {
+func (rf *Raft) sendAsync(value interface{}) {
 	if !rf.Running() {
 		return
 	}
@@ -92,11 +121,12 @@ func (rf *raft) sendAsync(value interface{}) {
 	}()
 
 }
+
 //
 // as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
 // tester) on the same server, via the applyCh passed to Make().
-// 
+//
 type ApplyMsg struct {
 	Index       int
 	Command     interface{}
@@ -106,40 +136,44 @@ type ApplyMsg struct {
 
 type LogEntries struct {
 	command interface{}
-	term int
+	term    int
 }
+
 //log entries 外面再包一层
 type Log struct {
 	//ApplyFunc func(*LogEntries) (interface{}, error)
-	entries []*LogEntries
+	entries     []*LogEntries
 	commitIndex int
-	mutex sync.Mutex
-	startIndex int
+	mutex       sync.Mutex
+	startIndex  int
 	initialized bool
 }
+
 //
 // A Go object implementing a single Raft peer.
 //
 //原始代码中的peer只是labrpc.ClientEnd，不便于进行封装，在这里重新进行封装
 type Peer struct {
-	raft *Raft
-	ConnectClient *labrpc.ClienEnd
-	ServerIndex int
-	//prevLogIndex int   
+	raft          *Raft
+	ConnectClient *labrpc.ClientEnd
+	ServerIndex   int
+	//prevLogIndex int
 	//后面在实现log replication的时候加入
-	stopChan chan bool
+	stopChan          chan bool
 	heartbeatInterval time.Duration
-	lastActivity time.Time
+	lastActivity      time.Time
 	sync.Mutex
 }
-func newPeer(raft *raft, server int, connectclient *labrpc.ClienEnd, heartbeatInterval time.Duration) *Peer{
+
+func newPeer(raft *Raft, server int, connectclient *labrpc.ClientEnd, heartbeatInterval time.Duration) *Peer {
 	return &Peer{
-		raft:            raft,
-		ServerIndex :     server,
-		ConnectClient:   connectclient,
+		raft:              raft,
+		ServerIndex:       server,
+		ConnectClient:     connectclient,
 		heartbeatInterval: heartbeatInterval,
 	}
 }
+
 //starts the peer heartbeat
 func (p *Peer) startHeartbeat() {
 	p.stopChan = make(chan bool)
@@ -156,7 +190,7 @@ func (p *Peer) heartbeat(c chan bool) {
 	stopChan := p.stopChan
 	c <- true
 	ticker := time.Tick(HeartbeatInterval)
-	DPrintf("peer.heartbeat: ", p.ConnectClient.endname, HeartbeatInterval)
+	//DPrintf("peer.heartbeat: ", p.ConnectClient.endname, HeartbeatInterval)
 	for {
 		select {
 		case flush := <-stopChan:
@@ -164,31 +198,30 @@ func (p *Peer) heartbeat(c chan bool) {
 				// before we can safely remove a node
 				// we must flush the remove command to the node first
 				p.flush()
-				debugln("peer.heartbeat.stop.with.flush: ", p.Name)
+				DPrintf("peer.heartbeat.stop.with.flush: ", p.ServerIndex)
 				return
 			} else {
-				debugln("peer.heartbeat.stop: ", p.Name)
+				DPrintf("peer.heartbeat.stop: ", p.ServerIndex)
 				return
 			}
 		case <-ticker:
 			start := time.Now()
-			p.flush()
-			
-		}
-	}	
+
+		}                                                                                                                                                                                
+	}
 }
 func (p *Peer) stopHeartbeat(flush bool) {
 	p.stopChan <- flush
 }
 
 func (p *Peer) flush() {
-	DPrintf("peer.heartbeat.flush: ", p.ConnectClient.endname)
+	//DPrintf("peer.heartbeat.flush: ", p.ConnectClient.endname)
 	term := p.raft.currentTerm
 	leader := p.raft.leader
 	//this two propertities need get() and set()
 	//server int, args *RequestAppendEntriesArgs, reply *RequestAppendEntriesReply
 	args := newAppendEntriesRequest(term, leader)
-	var reply *RequestAppendEntriesReply = &RequestAppendEntriesReply{}
+	var reply *AppendEntriesReply = &AppendEntriesReply{}
 	p.sendAppendEntriesRequest(newAppendEntriesRequest(term, leader), reply)
 }
 func (p *Peer) setLastActivity(now time.Time) {
@@ -196,28 +229,7 @@ func (p *Peer) setLastActivity(now time.Time) {
 	defer p.Unlock()
 	p.lastActivity = now
 }
-type Raft struct {
-	mu        sync.Mutex          // Lock to protect shared access to this peer's state
-	peers     []*Peer // RPC end points of all peers
-	persister *Persister          // Object to hold this peer's persisted state
-	me        int                 // this peer's index into peers[]
-	leader    int                 // this peer's leader
-	state     string
-	currentTerm int
-	votedFor int
-	routineGroup sync.WaitGroup  //raft需要去等着他开出去的goroutine工作结束
-	//log  *Log
-	//commitIndex int
-	lastApplied int
-    //nextIndex   []int              //对于每一个服务器，
-    //需要发送给他的下一个日志条目的索引值（初始化为领导人最后索引值加一） 
-    //matchIndex  []int              //对于每一个服务器，已经复制给他的日志的最高索引值      
-	// Your data here (2A, 2B, 2C).
-	// Look at the paper's Figure 2 for a description of what
-	// state a Raft server must maintain.
-	c  chan *ev
-	stopped chan bool
-}
+
 
 
 func (rf *Raft) State() string {
@@ -230,6 +242,7 @@ func (rf *Raft) setState(s string) {
 	defer rf.mu.Unlock()
 	rf.state = s
 }
+
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
@@ -239,15 +252,14 @@ func (rf *Raft) GetState() (int, bool) {
 
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	state := rf.State()
 	if state == "leader" {
 		term = rf.currentTerm
 		isleader = true
-	} 
-	else {
+	} else {
 		term = rf.currentTerm
 		isleader = false
 	}
-
 	return term, isleader
 }
 func (rf *Raft) Term() int {
@@ -255,6 +267,7 @@ func (rf *Raft) Term() int {
 	defer rf.mu.Unlock()
 	return rf.currentTerm
 }
+
 //
 // save Raft's persistent state to stable storage,
 // where it can later be retrieved after a crash and restart.
@@ -286,67 +299,67 @@ func (rf *Raft) readPersist(data []byte) {
 	}
 }
 
-
-
-
 //
 // example RequestVote RPC arguments structure.
 // field names must start with capital letters!
 //
 type RequestVoteRequest struct {
 	// Your data here (2A, 2B).
-	Term int 
+	Term         int
 	CandidatedId int
 	//LastLogIndex int
 	//LastLogTerm int
 
 }
+
 func newRequestVoteRequest(term int, candidatedid int) *RequestVoteRequest {
 	return &RequestVoteRequest{
-		Term : term,
-		CandidatedId : candidatedid
+		Term:         term,
+		CandidatedId: candidatedid,
 	}
-} 
+}
 
 //
 // example RequestVote RPC reply structure.
 // field names must start with capital letters!
 //
 type RequestVoteReply struct {
-	Term int
-	votesGranted bool
+	Term         int
+	VoteForCandidate bool
 }
-func newRequestVoteReply(term int, voteForCandidate bool) *RequestVoteReply {
-	return &RequestVoteReply {
-		Term: term
-		VoteForCandidate: voteForCandidate
+
+func newRequestVoteReply(term int, voteforcandidate bool) *RequestVoteReply {
+	return &RequestVoteReply{
+		Term:             term,
+		VoteForCandidate: voteforcandidate,
 	}
 }
 
 type AppendEntriesRequest struct {
-	Term int
-	Leader int 
+	Term   int
+	Leader int
 }
 
-func newAppendEntriesRequest (term int, leader int) *AppendEntriesRequest {
+func newAppendEntriesRequest(term int, leader int) *AppendEntriesRequest {
 	return &AppendEntriesRequest{
-		Term : term
-		Leader : leader
+		Term:   term,
+		Leader: leader,
 	}
 }
 
 type AppendEntriesReply struct {
-	Term int
+	Term    int
 	Success bool
-//--------------------分割线上下两部分：上部分是对面的server传回来的结果
-// 下部分是根据传回来的结果进行append
+	//--------------------分割线上下两部分：上部分是对面的server传回来的结果
+	// 下部分是根据传回来的结果进行append
 	Peer int
 	//append bool
 }
-func newAppendEntriesReply (term int, success bool) *AppendEntriesReply {
+
+func newAppendEntriesReply(term int, success bool) *AppendEntriesReply {
 	return &AppendEntriesReply{
-		Term : term
-		Success : success
+		Term:    term,
+		Success: success,
 	}
 }
 
@@ -358,28 +371,29 @@ func afterBetween(min time.Duration, max time.Duration) <-chan time.Time {
 	}
 	return time.After(d)
 }
+
 //
 // example RequestVote RPC handler.
 // 这里的RequestVote类似go-raft中的http handler，收到请求后发送到chan里后等待处理结束
 // ingoing call
 func (rf *Raft) RequestVoteHandler(args *RequestVoteRequest, reply *RequestVoteReply) {
 	ret, _ := rf.send(args)
-	reply := ret.(*RequestVoteReply)
+	reply = ret.(*RequestVoteReply)
 }
+
 //send VoteRequest Request
 // outgoing call
-func (p *Peer) sendVoteRequest(req *RequestVoteRequest, c chan*RequestVoteReply) {
-	DPrintf("peer.vote: ", p.server.Name(), "->", p.Name)
+func (p *Peer) sendVoteRequest(req *RequestVoteRequest, c chan *RequestVoteReply) {
+	DPrintf("peer.vote: ", p.raft.me, "->", p.ServerIndex)
 	var reply RequestVoteReply
 	if ok := p.ConnectClient.Call("Raft.RequestVoteHandler", req, &reply); ok {
-		DPrintf("peer.vote.recv:",  p.server.me, "<-", p.ServerIndex)
+		DPrintf("peer.vote.recv:", p.raft.me, "<-", p.ServerIndex)
+		p.setLastActivity(time.Now())
+		c <- &reply
+	} else {
+		DPrintf("peer.vote.failed:", p.raft.me, "<-", p.ServerIndex)
 	}
-	p.setLastActivity(time.Now())
-	c <- reply
-	else {
-		DPrintf("peer.vote.failed:",  p.server.me, "<-", p.ServerIndex)
-	}
-	
+
 }
 
 //--------------------------------------
@@ -387,36 +401,36 @@ func (p *Peer) sendVoteRequest(req *RequestVoteRequest, c chan*RequestVoteReply)
 //--------------------------------------
 //Sends an AppendEntries request to the peer through the config network call
 
-func (p *Peer) sendAppendEntriesRequest(args *RequestAppendEntriesArgs, reply *RequestAppendEntriesReply) {
-	ok := p.ConnectClient.Call("Raft.RequestAppendEntriesHandler", args, reply)
+func (p *Peer) sendAppendEntriesRequest(args *AppendEntriesRequest, reply *AppendEntriesReply) {
+	ok := p.ConnectClient.Call("Raft.AppendEntriesHandler", args, reply)
 	if ok == false {
-		DPrintf("peer.append.fail", p.server.me, "->", p.ServerIndex)
+		DPrintf("peer.append.fail", p.raft.me, "->", p.ServerIndex)
 		return
 	}
-	DPrintf("peer.append.resp",  p.server.me, "->", p.ServerIndex)
+	DPrintf("peer.append.resp", p.raft.me, "->", p.ServerIndex)
 	p.setLastActivity(time.Now())
 	p.Lock()
-	if reply.success {
-		DPrintf("peer.append.resp.success",  p.ServerIndex)
+	if reply.Success {
+		DPrintf("peer.append.resp.success", p.ServerIndex)
 	} else {
-		if reply.term > p.server.Term {
+		if reply.Term > p.raft.Term() {
 			DPrintf("peer.append.resp.not.update: new leader.found")
 
 		}
-		//else if 
-		//else 
+		//else if
+		//else
 		//以上这两种情况是log replication被拒绝的情况，之后在其他测试用例再补充
 	}
 	p.Unlock()
 	//Attach the peer to reply, thus server can know where it comes from
-	reply.peer = p.ServerIndex
+	reply.Peer = p.ServerIndex
 	//send responses to server for processing
-	p.server.sendAsync(reply)
+	p.raft.sendAsync(reply)
 }
 
-func (rf *Raft) AppendEntriesRequestHandler(args *RequestVoteArgs, reply *RequestVoteReply) {
+func (rf *Raft) AppendEntriesRequestHandler(args *RequestVoteRequest, reply *RequestVoteReply) {
 	ret, _ := rf.send(args)
-	reply := ret.(*RequestVoteReply)
+	reply = ret.(*RequestVoteReply)
 }
 
 //
@@ -449,7 +463,7 @@ func (rf *Raft) AppendEntriesRequestHandler(args *RequestVoteArgs, reply *Reques
 // the struct itself.
 //
 
-func (rf *Raft) processRequestVoteRequest(req *RequestVoteArgs) (*RequestVoteReply, bool) {
+func (rf *Raft) processRequestVoteRequest(req *RequestVoteRequest) (*RequestVoteReply, bool) {
 	// If the request is coming from an old term then reject it.
 	if req.Term < rf.Term() {
 		DPrintf("server.rv.deny.vote: cause stale term")
@@ -462,7 +476,7 @@ func (rf *Raft) processRequestVoteRequest(req *RequestVoteArgs) (*RequestVoteRep
 	if req.Term > rf.Term() {
 		rf.updateCurrentTerm(req.Term, -1)
 	} else if rf.votedFor != -1 && rf.votedFor != req.CandidatedId {
-		DPrintf("server.deny.vote: cause duplicate vote: ", req.CandidatedId, 
+		DPrintf("server.deny.vote: cause duplicate vote: ", req.CandidatedId,
 			" already vote for", rf.votedFor)
 		return newRequestVoteReply(rf.currentTerm, false), false
 	}
@@ -484,6 +498,7 @@ func (rf *Raft) processAppendEntriesReply(rep *AppendEntriesReply) {
 	//之后在log rep的部分要做的事情是根据ae的响应来确定哪条日志要被commit,
 
 }
+
 //
 // the service using Raft (e.g. a k/v server) wants to start
 // agreement on the next command to be appended to Raft's log. if this
@@ -504,7 +519,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 	// Your code here (2B).
 
-
 	return index, term, isLeader
 }
 
@@ -519,7 +533,6 @@ func (rf *Raft) Kill() {
 }
 
 //
-
 
 // the service or tester wants to create a Raft server. the ports
 // of all the Raft servers (including this one) are in peers[]. this
@@ -641,13 +654,12 @@ func (rf *Raft) leaderLoop() {
 	//TODO:
 	//syncedPeer用来统计有多少peer已经apply了这条日志来确定这条日志是否commit
 	//rf.syncedPeer = nil
-	}
-
 }
+
 // The event loop that is run when the server is in a Candidate state.
 func (rf *Raft) candidateLoop() {
 	preleader := rf.Leader
-	rf.Leader = -1 
+	rf.Leader = -1
 
 	doVote := true
 	//每隔一段时间向follower发送vote请求
@@ -717,12 +729,12 @@ func (rf *Raft) candidateLoop() {
 func (rf *Raft) followerLoop() {
 	since := time.Now()
 	electionTimeout := RaftElectionTimeout
-	timeoutchan := afterBetween(electionTimeout, electionTimeout * 2)
+	timeoutchan := afterBetween(electionTimeout, electionTimeout*2)
 	for rf.State() == Follower {
 		var err error
 		update := false
 		select {
-		case e := <- rf.c:
+		case e := <-rf.c:
 			switch req := e.target.(type) {
 			case *AppendEntriesRequest:
 				elapsedTime := time.Now().Sub(since)
@@ -738,13 +750,13 @@ func (rf *Raft) followerLoop() {
 			//call back to event
 			//this step will block
 			e.c <- err
-		case <- timeoutChan:
+		case <-timeoutChan:
 			//todo: only allow synced follower to promote to candidate
 			rf.setState(Candidate)
 		}
 		if update {
 			since = time.Now()
-			timeoutChan = afterBetween(ElectionTimeout, ElectionTimeout * 2)
+			timeoutChan = afterBetween(ElectionTimeout, ElectionTimeout*2)
 		}
 
 	}
@@ -771,7 +783,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	go func() {
 		defer rf.routineGroup.Done()
 		rf.loop()
-	}
+	}()
 
 	return rf
 }

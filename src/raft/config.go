@@ -77,6 +77,7 @@ func make_config(t *testing.T, n int, unreliable bool) *config {
 
 	return cfg
 }
+
 //
 // shut down a Raft server but save its persistent state.
 func (cfg *config) crash1(i int) {
