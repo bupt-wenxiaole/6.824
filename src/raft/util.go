@@ -1,6 +1,7 @@
 package raft
 
 import "log"
+import "fmt"
 
 // Debugging
 const Debug = 1

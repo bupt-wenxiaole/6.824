@@ -36,6 +36,7 @@ const (
 const ElectionTimeoutThresholdPercent = 0.8
 
 var StopError = errors.New("raft: Has been stopped")
+var NotLeaderError = errors.New("raft.Server: Not current leader")
 
 type ev struct {
 	target      interface{}
@@ -205,8 +206,8 @@ func (p *Peer) heartbeat(c chan bool) {
 				return
 			}
 		case <-ticker:
-			start := time.Now()
-
+			//start := time.Now()
+			p.flush()
 		}                                                                                                                                                                                
 	}
 }
@@ -222,7 +223,7 @@ func (p *Peer) flush() {
 	//server int, args *RequestAppendEntriesArgs, reply *RequestAppendEntriesReply
 	args := newAppendEntriesRequest(term, leader)
 	var reply *AppendEntriesReply = &AppendEntriesReply{}
-	p.sendAppendEntriesRequest(newAppendEntriesRequest(term, leader), reply)
+	p.sendAppendEntriesRequest(args, reply)
 }
 func (p *Peer) setLastActivity(now time.Time) {
 	p.Lock()
@@ -262,7 +263,7 @@ func (rf *Raft) GetState() (int, bool) {
 	}
 	return term, isleader
 }
-func (rf *Raft) Term() int {
+func (rf *Raft) GetTerm() int {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	return rf.currentTerm
@@ -413,7 +414,7 @@ func (p *Peer) sendAppendEntriesRequest(args *AppendEntriesRequest, reply *Appen
 	if reply.Success {
 		DPrintf("peer.append.resp.success", p.ServerIndex)
 	} else {
-		if reply.Term > p.raft.Term() {
+		if reply.Term > p.raft.GetTerm() {
 			DPrintf("peer.append.resp.not.update: new leader.found")
 
 		}
@@ -465,7 +466,7 @@ func (rf *Raft) AppendEntriesRequestHandler(args *RequestVoteRequest, reply *Req
 
 func (rf *Raft) processRequestVoteRequest(req *RequestVoteRequest) (*RequestVoteReply, bool) {
 	// If the request is coming from an old term then reject it.
-	if req.Term < rf.Term() {
+	if req.Term < rf.GetTerm() {
 		DPrintf("server.rv.deny.vote: cause stale term")
 		return newRequestVoteReply(rf.currentTerm, false), false
 		//这两个false的意思是既不给该candidate进行投票，该请求也不能作为一个心跳来维持该follower的在线状态
@@ -473,7 +474,7 @@ func (rf *Raft) processRequestVoteRequest(req *RequestVoteRequest) (*RequestVote
 	// If the term of the request peer is larger than this node, update the term
 	// If the term is equal and we've already voted for a different candidate then
 	// don't vote for this candidate.
-	if req.Term > rf.Term() {
+	if req.Term > rf.GetTerm() {
 		rf.updateCurrentTerm(req.Term, -1)
 	} else if rf.votedFor != -1 && rf.votedFor != req.CandidatedId {
 		DPrintf("server.deny.vote: cause duplicate vote: ", req.CandidatedId,
@@ -482,14 +483,14 @@ func (rf *Raft) processRequestVoteRequest(req *RequestVoteRequest) (*RequestVote
 	}
 	//在test 2A中暂时不考率log的index问题（和log耦合的部分），raft设计的思路依旧遵照软件工程的高内聚，低耦合
 	//此时已经可以给该candidate进行投票了
-	DPrintf("server.rv.vote: ", rf.name, "votes for", req.CandidatedId, "at term", req.Term)
+	DPrintf("server.rv.vote: ", rf.me, "votes for", req.CandidatedId, "at term", req.Term)
 	rf.votedFor = req.CandidatedId
-	return newRequestVoteReply(s.currentTerm, true), true
+	return newRequestVoteReply(rf.currentTerm, true), true
 }
 func (rf *Raft) processAppendEntriesReply(rep *AppendEntriesReply) {
 	// if we find a higher term then change to a follwer and exit.
-	if rep.Term > rf.Term() {
-		rf.updateCurrentTerm(rep.Term(), -1)
+	if rep.Term > rf.GetTerm() {
+		rf.updateCurrentTerm(rep.Term, -1)
 		return
 	}
 	if !rep.Success {
@@ -498,7 +499,23 @@ func (rf *Raft) processAppendEntriesReply(rep *AppendEntriesReply) {
 	//之后在log rep的部分要做的事情是根据ae的响应来确定哪条日志要被commit,
 
 }
-
+// processVoteReply processes a vote request:
+// 1. if the vote is granted for the current term of the candidate, return true
+// 2. if the vote is denied due to smaller term, update the term of this server
+//    which will also cause the candidate to step-down, and return false.
+// 3. if the vote is for a smaller term, ignore it and return false.
+func (rf *Raft) processVoteReply(rep *RequestVoteReply) bool {
+	if rep.VoteForCandidate && rep.Term == rf.GetTerm() {
+		return true
+	}
+	if rep.Term > rf.GetTerm() {
+		DPrintf("server.candidate.vote.failed")
+		rf.updateCurrentTerm(rep.Term, -1)
+	} else {
+		DPrintf("server.candidate.vote: denied")
+	}
+	return false
+}
 //
 // the service using Raft (e.g. a k/v server) wants to start
 // agreement on the next command to be appended to Raft's log. if this
@@ -564,19 +581,19 @@ func (rf *Raft) loop() {
 func (rf *Raft) MemberCount() int {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	return len(s.peers) + 1
+	return len(rf.peers) + 1
 }
 func (rf *Raft) QuorumSize() int {
 	return (rf.MemberCount() / 2) + 1
 }
 
-func (rf *server) updateCurrentTerm(term int, leaderName int) {
-	_assert(term > s.currentTerm,
+func (rf *Raft) updateCurrentTerm(term int, leaderName int) {
+	_assert(term > rf.currentTerm,
 		"upadteCurrentTerm: update is called when term is not larger than currentTerm")
 
 	// Store previous values temporarily.
-	prevTerm := rf.currentTerm
-	prevLeader := rf.leader
+	//prevTerm := rf.currentTerm
+	//prevLeader := rf.leader
 
 	// set currentTerm = T, convert to follower (§5.1)
 	// stop heartbeats before step-down
@@ -586,8 +603,8 @@ func (rf *server) updateCurrentTerm(term int, leaderName int) {
 		}
 	}
 	// update the term and clear vote for
-	if s.state != Follower {
-		s.setState(Follower)
+	if rf.state != Follower {
+		rf.setState(Follower)
 	}
 
 	rf.mu.Lock()
@@ -606,7 +623,7 @@ func (rf *Raft) processAppendEntriesRequest(req *AppendEntriesRequest) (*AppendE
 		return newAppendEntriesReply(rf.currentTerm, false), false
 	}
 	if req.Term == rf.currentTerm {
-		_assert(s.State() != Leader, "leader.elected.at.same.term.%d\n", s.currentTerm)
+		_assert(rf.State() != Leader, "leader.elected.at.same.term.%d\n", rf.currentTerm)
 		// step-down to follower when it is a candidate
 		if rf.state == Candidate {
 			// change state to follower
@@ -614,26 +631,26 @@ func (rf *Raft) processAppendEntriesRequest(req *AppendEntriesRequest) (*AppendE
 		}
 		// discover new leader when candidate
 		// save leader name when follower
-		rf.leader = req.LeaderName
+		rf.leader = req.Leader
 	} else {
 		// Update term and leader.
-		rf.updateCurrentTerm(req.Term, req.LeaderName)
+		rf.updateCurrentTerm(req.Term, req.Leader)
 	}
 	//igonore the log replication, so the replication is always true
 	return newAppendEntriesReply(rf.currentTerm, true), true
 
 }
 func (rf *Raft) leaderLoop() {
-	for _, peer := range s.Peers {
+	for _, peer := range rf.peers {
 		peer.startHeartbeat()
 	}
 	// Begin to collect response from followers
 	for rf.State() == Leader {
 		var err error
 		select {
-		case <-s.stopped:
+		case <- rf.stopped:
 			// Stop all peers before stop
-			for _, peer := range s.peers {
+			for _, peer := range rf.peers {
 				peer.stopHeartbeat(false)
 			}
 			rf.setState(Stopped)
@@ -658,8 +675,8 @@ func (rf *Raft) leaderLoop() {
 
 // The event loop that is run when the server is in a Candidate state.
 func (rf *Raft) candidateLoop() {
-	preleader := rf.Leader
-	rf.Leader = -1
+	//preleader := rf.leader
+	rf.leader = -1
 
 	doVote := true
 	//每隔一段时间向follower发送vote请求
@@ -687,7 +704,7 @@ func (rf *Raft) candidateLoop() {
 			//   * Election timeout elapses without election resolution: increment term, start new election
 			//   * Discover higher term: step down (§5.1)
 			votesGranted = 1
-			timeoutChan = afterBetween(ElectionTimeout, ElectionTimeout*2)
+			timeoutChan = afterBetween(RaftElectionTimeout, RaftElectionTimeout*2)
 			doVote = false
 		}
 		// If we received enough votes then stop waiting for more votes.
@@ -705,12 +722,12 @@ func (rf *Raft) candidateLoop() {
 			return
 
 		case resp := <-respChan:
-			if success := rf.processVoteResponse(resp); success {
+			if success := rf.processVoteReply(resp); success {
 				DPrintf("server.candidate.vote.granted: ", votesGranted)
 				votesGranted++
 			}
 
-		case e := <-s.c:
+		case e := <-rf.c:
 			var err error
 			switch req := e.target.(type) {
 			case *AppendEntriesRequest:
@@ -727,7 +744,7 @@ func (rf *Raft) candidateLoop() {
 	}
 }
 func (rf *Raft) followerLoop() {
-	since := time.Now()
+	//since := time.Now()
 	electionTimeout := RaftElectionTimeout
 	timeoutchan := afterBetween(electionTimeout, electionTimeout*2)
 	for rf.State() == Follower {
@@ -737,7 +754,7 @@ func (rf *Raft) followerLoop() {
 		case e := <-rf.c:
 			switch req := e.target.(type) {
 			case *AppendEntriesRequest:
-				elapsedTime := time.Now().Sub(since)
+				//elapsedTime := time.Now().Sub(since)
 				//if elapsedTime > time.Duration(float64(RaftElectionTimeout)*ElectionTimeoutThresholdPercent) {
 				//	rf.DispatchEvent(newEvent(ElectionTimeoutThresholdEventType, elapsedTime, nil) )
 				//}
@@ -750,13 +767,13 @@ func (rf *Raft) followerLoop() {
 			//call back to event
 			//this step will block
 			e.c <- err
-		case <-timeoutChan:
+		case <-timeoutchan:
 			//todo: only allow synced follower to promote to candidate
 			rf.setState(Candidate)
 		}
 		if update {
-			since = time.Now()
-			timeoutChan = afterBetween(ElectionTimeout, ElectionTimeout*2)
+			//since = time.Now()
+			timeoutchan = afterBetween(RaftElectionTimeout, RaftElectionTimeout*2)
 		}
 
 	}
@@ -765,11 +782,11 @@ func (rf *Raft) followerLoop() {
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
 	rf := &Raft{}
-	Peers := make([]*Peer)
+	Peers := make([]*Peer, len(peers))
 	for index, clientend := range peers {
-		Peers = append(Peers, newPeer(rf, index, clientend, DefaultHeartbeatInterval))
+		Peers[index] = newPeer(rf, index, clientend, HeartbeatInterval)
 	}
-	rf.Peers = Peers
+	rf.peers = Peers
 	rf.persister = persister
 	rf.me = me
 	rf.c = make(chan *ev, 256)
