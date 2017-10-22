@@ -21,7 +21,10 @@ import "sync"
 import "labrpc"
 import "time"
 import "errors"
-import "math/rand"
+import (
+	"math/rand"
+	"fmt"
+)
 
 // import "bytes"
 // import "encoding/gob"
@@ -365,11 +368,13 @@ func newAppendEntriesReply(term int, success bool) *AppendEntriesReply {
 }
 
 func afterBetween(min time.Duration, max time.Duration) <-chan time.Time {
-	rand := rand.New(rand.NewSource(time.Now().UnixNano()))
+	//rand := rand.New(rand.NewSource(time.Now().UnixNano()))
+	//在一台server上使用随机数种子会导致每次出现相同的数字，从而导致避免瓜分选票的情况随机启动失效
 	d, delta := min, (max - min)
 	if delta > 0 {
 		d += time.Duration(rand.Int63n(int64(delta)))
 	}
+	fmt.Println(d)
 	return time.After(d)
 }
 
@@ -478,7 +483,7 @@ func (rf *Raft) processRequestVoteRequest(req *RequestVoteRequest) (*RequestVote
 		rf.updateCurrentTerm(req.Term, -1)
 	} else if rf.votedFor != -1 && rf.votedFor != req.CandidatedId {
 		DPrintf("server.deny.vote: cause duplicate vote: ", req.CandidatedId,
-			" already vote for", rf.votedFor)
+			" already vote for", rf.votedFor, "i am raft", rf.me)
 		return newRequestVoteReply(rf.currentTerm, false), false
 	}
 	//在test 2A中暂时不考率log的index问题（和log耦合的部分），raft设计的思路依旧遵照软件工程的高内聚，低耦合
@@ -565,7 +570,7 @@ func (rf *Raft) loop() {
 	state := rf.State()
 
 	for state != Stopped {
-		DPrintf("raft.loop.run %s\n", state)
+		DPrintf("raft.loop.run %s\n", state, rf.me)
 		switch state {
 		case Follower:
 			rf.followerLoop()
@@ -604,6 +609,7 @@ func (rf *Raft) updateCurrentTerm(term int, leaderName int) {
 	}
 	// update the term and clear vote for
 	if rf.state != Follower {
+		fmt.Println("step down to the follwer")
 		rf.setState(Follower)
 	}
 

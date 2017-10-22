@@ -12,6 +12,7 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	}
 	return
 }
+
 func _assert(condition bool, msg string, v ...interface{}) {
 	if !condition {
 		panic(fmt.Sprintf("assertion failed: "+msg, v...))
