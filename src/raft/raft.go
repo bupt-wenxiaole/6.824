@@ -309,6 +309,7 @@ func (rf *Raft) readPersist(data []byte) {
 //
 type RequestVoteRequest struct {
 	// Your data here (2A, 2B).
+	peer         *Peer
 	Term         int
 	CandidatedId int
 	//LastLogIndex int
@@ -328,6 +329,7 @@ func newRequestVoteRequest(term int, candidatedid int) *RequestVoteRequest {
 // field names must start with capital letters!
 //
 type RequestVoteReply struct {
+	peer         *Peer
 	Term         int
 	VoteForCandidate bool
 }
@@ -356,7 +358,7 @@ type AppendEntriesReply struct {
 	Success bool
 	//--------------------分割线上下两部分：上部分是对面的server传回来的结果
 	// 下部分是根据传回来的结果进行append
-	Peer int
+	peer    *Peer
 	//append bool
 }
 
@@ -384,17 +386,23 @@ func afterBetween(min time.Duration, max time.Duration) <-chan time.Time {
 // ingoing call
 func (rf *Raft) RequestVoteHandler(args *RequestVoteRequest, reply *RequestVoteReply) {
 	ret, _ := rf.send(args)
-	reply = ret.(*RequestVoteReply)
+	reply.VoteForCandidate = ret.(*RequestVoteReply).VoteForCandidate
+	reply.Term = ret.(*RequestVoteReply).Term
+	fmt.Println("debug for always deny vote request 3st", reply.VoteForCandidate, reply.Term)
 }
 
 //send VoteRequest Request
 // outgoing call
 func (p *Peer) sendVoteRequest(req *RequestVoteRequest, c chan *RequestVoteReply) {
 	DPrintf("peer.vote: ", p.raft.me, "->", p.ServerIndex)
+	req.peer = p
 	var reply RequestVoteReply
+	fmt.Println("debug for always deny vote request 1st", reply.VoteForCandidate, reply.peer, reply.Term)
 	if ok := p.ConnectClient.Call("Raft.RequestVoteHandler", req, &reply); ok {
-		DPrintf("peer.vote.recv:", p.raft.me, "<-", p.ServerIndex)
+		DPrintf("peer.vote.recv, put it into resp chan:", p.raft.me, "<-", p.ServerIndex)
+		fmt.Println("debug for always deny vote request 2st", reply.VoteForCandidate, reply.peer, reply.Term)
 		p.setLastActivity(time.Now())
+		reply.peer = p
 		c <- &reply
 	} else {
 		DPrintf("peer.vote.failed:", p.raft.me, "<-", p.ServerIndex)
@@ -408,7 +416,7 @@ func (p *Peer) sendVoteRequest(req *RequestVoteRequest, c chan *RequestVoteReply
 //Sends an AppendEntries request to the peer through the config network call
 
 func (p *Peer) sendAppendEntriesRequest(args *AppendEntriesRequest, reply *AppendEntriesReply) {
-	ok := p.ConnectClient.Call("Raft.AppendEntriesHandler", args, reply)
+	ok := p.ConnectClient.Call("Raft.AppendEntriesRequestHandler", args, reply)
 	if ok == false {
 		DPrintf("peer.append.fail", p.raft.me, "->", p.ServerIndex)
 		return
@@ -429,14 +437,15 @@ func (p *Peer) sendAppendEntriesRequest(args *AppendEntriesRequest, reply *Appen
 	}
 	p.Unlock()
 	//Attach the peer to reply, thus server can know where it comes from
-	reply.Peer = p.ServerIndex
+	reply.peer = p
 	//send responses to server for processing
 	p.raft.sendAsync(reply)
 }
 
-func (rf *Raft) AppendEntriesRequestHandler(args *RequestVoteRequest, reply *RequestVoteReply) {
+func (rf *Raft) AppendEntriesRequestHandler(args *AppendEntriesRequest, reply *AppendEntriesReply) {
 	ret, _ := rf.send(args)
-	reply = ret.(*RequestVoteReply)
+	reply.Term = ret.(*AppendEntriesReply).Term
+	reply.Success = ret.(*AppendEntriesReply).Success
 }
 
 //
@@ -510,14 +519,16 @@ func (rf *Raft) processAppendEntriesReply(rep *AppendEntriesReply) {
 //    which will also cause the candidate to step-down, and return false.
 // 3. if the vote is for a smaller term, ignore it and return false.
 func (rf *Raft) processVoteReply(rep *RequestVoteReply) bool {
+	//fmt.Println(rep.VoteForCandidate)
 	if rep.VoteForCandidate && rep.Term == rf.GetTerm() {
+		DPrintf("peer %d has voted for me: %d", rep.peer.ServerIndex, rf.me)
 		return true
 	}
 	if rep.Term > rf.GetTerm() {
-		DPrintf("server.candidate.vote.failed")
+		DPrintf("server.candidate.vote.failed", rep.peer.ServerIndex, "->", rf.me)
 		rf.updateCurrentTerm(rep.Term, -1)
 	} else {
-		DPrintf("server.candidate.vote: denied")
+		DPrintf("server.candidate.vote: denied",  rep.peer.ServerIndex, "->", rf.me)
 	}
 	return false
 }
@@ -678,6 +689,7 @@ func (rf *Raft) leaderLoop() {
 	//syncedPeer用来统计有多少peer已经apply了这条日志来确定这条日志是否commit
 	//rf.syncedPeer = nil
 }
+
 
 // The event loop that is run when the server is in a Candidate state.
 func (rf *Raft) candidateLoop() {
