@@ -221,7 +221,7 @@ func (p *Peer) stopHeartbeat(flush bool) {
 func (p *Peer) flush() {
 	//DPrintf("peer.heartbeat.flush: ", p.ConnectClient.endname)
 	term := p.raft.currentTerm
-	leader := p.raft.leader
+	leader := p.raft.me
 	//this two propertities need get() and set()
 	//server int, args *RequestAppendEntriesArgs, reply *RequestAppendEntriesReply
 	args := newAppendEntriesRequest(term, leader)
@@ -388,7 +388,7 @@ func (rf *Raft) RequestVoteHandler(args *RequestVoteRequest, reply *RequestVoteR
 	ret, _ := rf.send(args)
 	reply.VoteForCandidate = ret.(*RequestVoteReply).VoteForCandidate
 	reply.Term = ret.(*RequestVoteReply).Term
-	fmt.Println("debug for always deny vote request 3st", reply.VoteForCandidate, reply.Term)
+	//fmt.Println("debug for always deny vote request 3st", reply.VoteForCandidate, reply.Term)
 }
 
 //send VoteRequest Request
@@ -397,10 +397,10 @@ func (p *Peer) sendVoteRequest(req *RequestVoteRequest, c chan *RequestVoteReply
 	DPrintf("peer.vote: ", p.raft.me, "->", p.ServerIndex)
 	req.peer = p
 	var reply RequestVoteReply
-	fmt.Println("debug for always deny vote request 1st", reply.VoteForCandidate, reply.peer, reply.Term)
+	//fmt.Println("debug for always deny vote request 1st", reply.VoteForCandidate, reply.peer, reply.Term)
 	if ok := p.ConnectClient.Call("Raft.RequestVoteHandler", req, &reply); ok {
 		DPrintf("peer.vote.recv, put it into resp chan:", p.raft.me, "<-", p.ServerIndex)
-		fmt.Println("debug for always deny vote request 2st", reply.VoteForCandidate, reply.peer, reply.Term)
+		//fmt.Println("debug for always deny vote request 2st", reply.VoteForCandidate, reply.peer, reply.Term)
 		p.setLastActivity(time.Now())
 		reply.peer = p
 		c <- &reply
@@ -639,7 +639,8 @@ func (rf *Raft) processAppendEntriesRequest(req *AppendEntriesRequest) (*AppendE
 		DPrintf("server.ae.error: stale term")
 		return newAppendEntriesReply(rf.currentTerm, false), false
 	}
-	if req.Term == rf.currentTerm {
+	if req.Term == rf.currentTerm && req.Leader != rf.me {
+		DPrintf("heartbeat is from:", req.Leader, "I am:", rf.me)
 		_assert(rf.State() != Leader, "leader.elected.at.same.term.%d\n", rf.currentTerm)
 		// step-down to follower when it is a candidate
 		if rf.state == Candidate {
@@ -649,7 +650,7 @@ func (rf *Raft) processAppendEntriesRequest(req *AppendEntriesRequest) (*AppendE
 		// discover new leader when candidate
 		// save leader name when follower
 		rf.leader = req.Leader
-	} else {
+	} else if req.Leader != rf.me{
 		// Update term and leader.
 		rf.updateCurrentTerm(req.Term, req.Leader)
 	}
