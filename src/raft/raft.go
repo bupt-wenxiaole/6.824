@@ -385,7 +385,13 @@ func afterBetween(min time.Duration, max time.Duration) <-chan time.Time {
 // 这里的RequestVote类似go-raft中的http handler，收到请求后发送到chan里后等待处理结束
 // ingoing call
 func (rf *Raft) RequestVoteHandler(args *RequestVoteRequest, reply *RequestVoteReply) {
+	if rf.me == 0 {
+		fmt.Println("i get candidate vote request!")
+	}
 	ret, _ := rf.send(args)
+	if rf.me == 0 {
+		fmt.Println("i get candidate vote request!")
+	}
 	reply.VoteForCandidate = ret.(*RequestVoteReply).VoteForCandidate
 	reply.Term = ret.(*RequestVoteReply).Term
 	//fmt.Println("debug for always deny vote request 3st", reply.VoteForCandidate, reply.Term)
@@ -482,6 +488,9 @@ func (rf *Raft) AppendEntriesRequestHandler(args *AppendEntriesRequest, reply *A
 
 func (rf *Raft) processRequestVoteRequest(req *RequestVoteRequest) (*RequestVoteReply, bool) {
 	// If the request is coming from an old term then reject it.
+	if rf.me == 0 {
+		fmt.Println("i start process request vote!")
+	}
 	if req.Term < rf.GetTerm() {
 		DPrintf("server.rv.deny.vote: cause stale term")
 		return newRequestVoteReply(rf.currentTerm, false), false
