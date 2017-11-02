@@ -267,6 +267,7 @@ func (cfg *config) checkOneLeader() int {
 	for iters := 0; iters < 10; iters++ {
 		time.Sleep(500 * time.Millisecond)
 		leaders := make(map[int][]int)
+		//fmt.Printf()
 		for i := 0; i < cfg.n; i++ {
 			if cfg.connected[i] {
 				if t, leader := cfg.rafts[i].GetState(); leader {

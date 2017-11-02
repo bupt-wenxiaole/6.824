@@ -398,7 +398,9 @@ func (p *Peer) sendVoteRequest(req *RequestVoteRequest, c chan *RequestVoteReply
 	req.peer = p
 	var reply RequestVoteReply
 	//fmt.Println("debug for always deny vote request 1st", reply.VoteForCandidate, reply.peer, reply.Term)
-	if ok := p.ConnectClient.Call("Raft.RequestVoteHandler", req, &reply); ok {
+	fmt.Println("debug 1st for server 0 never get message this vote send to", p.ServerIndex)
+	ok := p.ConnectClient.Call("Raft.RequestVoteHandler", req, &reply, p.ServerIndex)
+	if ok {
 		DPrintf("peer.vote.recv, put it into resp chan:", p.raft.me, "<-", p.ServerIndex)
 		//fmt.Println("debug for always deny vote request 2st", reply.VoteForCandidate, reply.peer, reply.Term)
 		p.setLastActivity(time.Now())
@@ -407,7 +409,7 @@ func (p *Peer) sendVoteRequest(req *RequestVoteRequest, c chan *RequestVoteReply
 	} else {
 		DPrintf("peer.vote.failed:", p.raft.me, "<-", p.ServerIndex)
 	}
-
+	fmt.Println("debug 2st for server 0 never get message this vote send to", p.ServerIndex)
 }
 
 //--------------------------------------
@@ -416,7 +418,7 @@ func (p *Peer) sendVoteRequest(req *RequestVoteRequest, c chan *RequestVoteReply
 //Sends an AppendEntries request to the peer through the config network call
 
 func (p *Peer) sendAppendEntriesRequest(args *AppendEntriesRequest, reply *AppendEntriesReply) {
-	ok := p.ConnectClient.Call("Raft.AppendEntriesRequestHandler", args, reply)
+	ok := p.ConnectClient.Call("Raft.AppendEntriesRequestHandler", args, reply, p.ServerIndex)
 	if ok == false {
 		DPrintf("peer.append.fail", p.raft.me, "->", p.ServerIndex)
 		return
@@ -639,9 +641,9 @@ func (rf *Raft) processAppendEntriesRequest(req *AppendEntriesRequest) (*AppendE
 		DPrintf("server.ae.error: stale term")
 		return newAppendEntriesReply(rf.currentTerm, false), false
 	}
-	if req.Term == rf.currentTerm && req.Leader != rf.me {
+	if req.Term == rf.currentTerm {
 		DPrintf("heartbeat is from:", req.Leader, "I am:", rf.me)
-		_assert(rf.State() != Leader, "leader.elected.at.same.term.%d\n", rf.currentTerm)
+		//_assert(rf.State() != Leader, "leader.elected.at.same.term.%d\n", rf.currentTerm)
 		// step-down to follower when it is a candidate
 		if rf.state == Candidate {
 			// change state to follower
