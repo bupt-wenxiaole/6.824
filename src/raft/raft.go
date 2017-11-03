@@ -82,10 +82,16 @@ func (rf *Raft) Running() bool {
 }
 
 func (rf *Raft) send(value interface{}) (interface{}, error) {
+	if rf.me == 0 {
+		fmt.Println("send value to event chan 1st")
+	}
 	if !rf.Running() {
+		fmt.Println("send value to event chan 2st")
 		return nil, StopError
 	}
-
+	if rf.me == 0 {
+		fmt.Println("send value to event chan 3st")
+	}
 	event := &ev{target: value, c: make(chan error, 1)}
 	select {
 	case rf.c <- event:
@@ -386,11 +392,11 @@ func afterBetween(min time.Duration, max time.Duration) <-chan time.Time {
 // ingoing call
 func (rf *Raft) RequestVoteHandler(args *RequestVoteRequest, reply *RequestVoteReply) {
 	if rf.me == 0 {
-		fmt.Println("i get candidate vote request!")
+		fmt.Println("i get candidate vote request 1st")
 	}
 	ret, _ := rf.send(args)
 	if rf.me == 0 {
-		fmt.Println("i get candidate vote request!")
+		fmt.Println("i get candidate vote request 2st")
 	}
 	reply.VoteForCandidate = ret.(*RequestVoteReply).VoteForCandidate
 	reply.Term = ret.(*RequestVoteReply).Term
@@ -451,7 +457,13 @@ func (p *Peer) sendAppendEntriesRequest(args *AppendEntriesRequest, reply *Appen
 }
 
 func (rf *Raft) AppendEntriesRequestHandler(args *AppendEntriesRequest, reply *AppendEntriesReply) {
+	if rf.me == 0 {
+		fmt.Println("I get append ")
+	}
 	ret, _ := rf.send(args)
+	if rf.me == 0 {
+		fmt.Println("I get append ")
+	}
 	reply.Term = ret.(*AppendEntriesReply).Term
 	reply.Success = ret.(*AppendEntriesReply).Success
 }
@@ -780,6 +792,9 @@ func (rf *Raft) followerLoop() {
 	for rf.State() == Follower {
 		var err error
 		update := false
+		if rf.me == 0 {
+			fmt.Println("I GET VOTE request")
+		}
 		select {
 		case e := <-rf.c:
 			switch req := e.target.(type) {
@@ -790,8 +805,14 @@ func (rf *Raft) followerLoop() {
 				//}
 				e.returnValue, update = rf.processAppendEntriesRequest(req)
 			case *RequestVoteRequest:
+				if rf.me == 0 {
+					fmt.Println("I GET VOTE request")
+				}
 				e.returnValue, update = rf.processRequestVoteRequest(req)
 			default:
+				if rf.me == 0 {
+					fmt.Println("I GET VOTE request")
+				}
 				err = NotLeaderError
 			}
 			//call back to event

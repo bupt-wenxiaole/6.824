@@ -22,7 +22,7 @@ const RaftElectionTimeout = 1000 * time.Millisecond
 const HeartbeatInterval = 300 * time.Millisecond
 
 func TestInitialElection2A(t *testing.T) {
-	servers := 3
+	servers := 5
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
 
