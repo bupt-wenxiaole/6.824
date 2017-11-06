@@ -34,6 +34,8 @@ const (
 	Follower  = "follower"
 	Candidate = "candidates"
 	Leader    = "leader"
+	RaftElectionTimeout = 1000 * time.Millisecond
+	HeartbeatInterval = 300 * time.Millisecond
 )
 
 const ElectionTimeoutThresholdPercent = 0.8
@@ -82,15 +84,8 @@ func (rf *Raft) Running() bool {
 }
 
 func (rf *Raft) send(value interface{}) (interface{}, error) {
-	if rf.me == 0 {
-		fmt.Println("send value to event chan 1st")
-	}
 	if !rf.Running() {
-		fmt.Println("send value to event chan 2st")
 		return nil, StopError
-	}
-	if rf.me == 0 {
-		fmt.Println("send value to event chan 3st")
 	}
 	event := &ev{target: value, c: make(chan error, 1)}
 	select {
@@ -256,12 +251,11 @@ func (rf *Raft) setState(s string) {
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
-
 	var term int
 	var isleader bool
 
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	//rf.mu.Lock()
+	//defer rf.mu.Unlock()
 	state := rf.State()
 	if state == "leader" {
 		term = rf.currentTerm
@@ -382,7 +376,6 @@ func afterBetween(min time.Duration, max time.Duration) <-chan time.Time {
 	if delta > 0 {
 		d += time.Duration(rand.Int63n(int64(delta)))
 	}
-	fmt.Println(d)
 	return time.After(d)
 }
 
@@ -391,13 +384,7 @@ func afterBetween(min time.Duration, max time.Duration) <-chan time.Time {
 // 这里的RequestVote类似go-raft中的http handler，收到请求后发送到chan里后等待处理结束
 // ingoing call
 func (rf *Raft) RequestVoteHandler(args *RequestVoteRequest, reply *RequestVoteReply) {
-	if rf.me == 0 {
-		fmt.Println("i get candidate vote request 1st")
-	}
 	ret, _ := rf.send(args)
-	if rf.me == 0 {
-		fmt.Println("i get candidate vote request 2st")
-	}
 	reply.VoteForCandidate = ret.(*RequestVoteReply).VoteForCandidate
 	reply.Term = ret.(*RequestVoteReply).Term
 	//fmt.Println("debug for always deny vote request 3st", reply.VoteForCandidate, reply.Term)
@@ -409,19 +396,15 @@ func (p *Peer) sendVoteRequest(req *RequestVoteRequest, c chan *RequestVoteReply
 	DPrintf("peer.vote: ", p.raft.me, "->", p.ServerIndex)
 	req.peer = p
 	var reply RequestVoteReply
-	//fmt.Println("debug for always deny vote request 1st", reply.VoteForCandidate, reply.peer, reply.Term)
-	fmt.Println("debug 1st for server 0 never get message this vote send to", p.ServerIndex)
 	ok := p.ConnectClient.Call("Raft.RequestVoteHandler", req, &reply, p.ServerIndex)
 	if ok {
 		DPrintf("peer.vote.recv, put it into resp chan:", p.raft.me, "<-", p.ServerIndex)
-		//fmt.Println("debug for always deny vote request 2st", reply.VoteForCandidate, reply.peer, reply.Term)
 		p.setLastActivity(time.Now())
 		reply.peer = p
 		c <- &reply
 	} else {
 		DPrintf("peer.vote.failed:", p.raft.me, "<-", p.ServerIndex)
 	}
-	fmt.Println("debug 2st for server 0 never get message this vote send to", p.ServerIndex)
 }
 
 //--------------------------------------
@@ -457,13 +440,7 @@ func (p *Peer) sendAppendEntriesRequest(args *AppendEntriesRequest, reply *Appen
 }
 
 func (rf *Raft) AppendEntriesRequestHandler(args *AppendEntriesRequest, reply *AppendEntriesReply) {
-	if rf.me == 0 {
-		fmt.Println("I get append ")
-	}
 	ret, _ := rf.send(args)
-	if rf.me == 0 {
-		fmt.Println("I get append ")
-	}
 	reply.Term = ret.(*AppendEntriesReply).Term
 	reply.Success = ret.(*AppendEntriesReply).Success
 }
@@ -500,9 +477,6 @@ func (rf *Raft) AppendEntriesRequestHandler(args *AppendEntriesRequest, reply *A
 
 func (rf *Raft) processRequestVoteRequest(req *RequestVoteRequest) (*RequestVoteReply, bool) {
 	// If the request is coming from an old term then reject it.
-	if rf.me == 0 {
-		fmt.Println("i start process request vote!")
-	}
 	if req.Term < rf.GetTerm() {
 		DPrintf("server.rv.deny.vote: cause stale term")
 		return newRequestVoteReply(rf.currentTerm, false), false
@@ -792,9 +766,6 @@ func (rf *Raft) followerLoop() {
 	for rf.State() == Follower {
 		var err error
 		update := false
-		if rf.me == 0 {
-			fmt.Println("I GET VOTE request")
-		}
 		select {
 		case e := <-rf.c:
 			switch req := e.target.(type) {
@@ -805,14 +776,8 @@ func (rf *Raft) followerLoop() {
 				//}
 				e.returnValue, update = rf.processAppendEntriesRequest(req)
 			case *RequestVoteRequest:
-				if rf.me == 0 {
-					fmt.Println("I GET VOTE request")
-				}
 				e.returnValue, update = rf.processRequestVoteRequest(req)
 			default:
-				if rf.me == 0 {
-					fmt.Println("I GET VOTE request")
-				}
 				err = NotLeaderError
 			}
 			//call back to event

@@ -17,7 +17,9 @@ import crand "crypto/rand"
 import "encoding/base64"
 import "sync/atomic"
 import "time"
-import "fmt"
+import (
+	"fmt"
+)
 
 func randstring(n int) string {
 	b := make([]byte, 2*n)
@@ -267,7 +269,7 @@ func (cfg *config) checkOneLeader() int {
 	for iters := 0; iters < 10; iters++ {
 		time.Sleep(500 * time.Millisecond)
 		leaders := make(map[int][]int)
-		//fmt.Printf()
+
 		for i := 0; i < cfg.n; i++ {
 			if cfg.connected[i] {
 				if t, leader := cfg.rafts[i].GetState(); leader {
@@ -409,7 +411,6 @@ func (cfg *config) one(cmd int, expectedServers int) int {
 				}
 			}
 		}
-
 		if index != -1 {
 			// somebody claimed to be the leader and to have
 			// submitted our command; wait a while for agreement.

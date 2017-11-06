@@ -18,19 +18,15 @@ import "sync"
 // The tester generously allows solutions to complete elections in one second
 // (much more than the paper's range of timeouts).
 
-const RaftElectionTimeout = 1000 * time.Millisecond
-const HeartbeatInterval = 300 * time.Millisecond
 
 func TestInitialElection2A(t *testing.T) {
-	servers := 5
+	servers := 3
 	cfg := make_config(t, servers, false)
 	defer cfg.cleanup()
 
 	fmt.Printf("Test (2A): initial election ...\n")
-
 	// is a leader elected?
 	cfg.checkOneLeader()
-	fmt.Printf("Check finish\n")
 	// does the leader+term stay the same if there is no network failure?
 	term1 := cfg.checkTerms()
 	time.Sleep(2 * RaftElectionTimeout)

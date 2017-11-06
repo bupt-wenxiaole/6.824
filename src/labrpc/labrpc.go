@@ -60,7 +60,6 @@ import "strings"
 import "math/rand"
 import (
 	"time"
-	"fmt"
 )
 
 type reqMsg struct {
@@ -95,12 +94,9 @@ func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}, se
 	qe := gob.NewEncoder(qb)
 	qe.Encode(args)
 	req.args = qb.Bytes()
-	fmt.Println("I am stuck here 1st, this call is send to", serverindexdebug)
 	e.ch <- req 
 	//clientend的ch是网络ch的拷贝，有一个的线程单独从ch里读出所有的请求进行处理
-	fmt.Println("I am stuck here 2st, this call is send to", serverindexdebug)
 	rep := <-req.replyCh   //从请求rep的replych中读取rep
-	fmt.Println("I am stuck here 3st, this call is send to", serverindexdebug)
 	if rep.ok {
 		rb := bytes.NewBuffer(rep.reply)
 		rd := gob.NewDecoder(rb)
@@ -194,7 +190,6 @@ func (rn *Network) IsServerDead(endname interface{}, servername interface{}, ser
 
 func (rn *Network) ProcessReq(req reqMsg) {
 	enabled, servername, server, reliable, longreordering := rn.ReadEndnameInfo(req.endname)
-	fmt.Println("the network is reliable?", reliable)
 	if enabled && servername != nil && server != nil {
 		if reliable == false {
 			// short delay
