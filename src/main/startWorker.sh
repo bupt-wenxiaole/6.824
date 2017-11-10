@@ -3,7 +3,7 @@
 # set the environment variable
 source ~/.bash_profile
 #slavePath=$GOPATH
-slave = $1
+slave=$1
 # export GOPATH=$slavePath
 
 # change the relative directory
