@@ -4,6 +4,7 @@
 slaveIp1="10.2.152.24"
 slaveIp2="10.2.152.22"
 slaveIp3="10.2.152.21"
+slaveIp4="10.2.152.23"
 slaveName=$(whoami)
 # slavePath="/home/${slaveName}/go"
 
@@ -33,12 +34,14 @@ cd ${masterPath}/src/main
 
 # start shell script to start the worker daemon
 ssh ${slaveName}@${slaveIp1} "chmod +x ${slavePath}/src/main/startWorker.sh"
-ssh ${slaveName}@${slaveIp1} "${slavePath}/src/main/startWorker.sh"
+ssh ${slaveName}@${slaveIp1} "${slavePath}/src/main/startWorker.sh ${slaveIp1} &"
 
 ssh ${slaveName}@${slaveIp2} "chmod +x ${slavePath}/src/main/startWorker.sh"
-ssh ${slaveName}@${slaveIp2} "${slavePath}/src/main/startWorker.sh"
+ssh ${slaveName}@${slaveIp2} "${slavePath}/src/main/startWorker.sh ${slaveIp2} &"
 
 ssh ${slaveName}@${slaveIp3} "chmod +x ${slavePath}/src/main/startWorker.sh"
-ssh ${slaveName}@${slaveIp3} "${slavePath}/src/main/startWorker.sh"
+ssh ${slaveName}@${slaveIp3} "${slavePath}/src/main/startWorker.sh ${slaveIp3} &"
 
+ssh ${slaveName}@${slaveIp4} "chmod +x ${slavePath}/src/main/startWorker.sh"
+ssh ${slaveName}@${slaveIp4} "${slavePath}/src/main/startWorker.sh ${slaveIp4} &"
 
