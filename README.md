@@ -1,5 +1,5 @@
 # 6.824
-This project was forked from MIT 6.824, All developers are from Applied computing lab, Insititue of computing, CAS
+This project was forked from MIT 6.824
 before run, you should get alluxio-go and Json-iterator in this module like this:
 <pre><code>git clone https://github.com/Alluxio/alluxio-go.git
 go get github.com/json-iterator/go</code></pre>
